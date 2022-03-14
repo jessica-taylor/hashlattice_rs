@@ -154,6 +154,8 @@ pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static,
 pub enum LowerBound<V> {
     Geq(Option<V>),
     Gt(Option<V>),
+    Nlt(Option<V>),
+    Nleq(Option<V>),
 }
 
 #[async_trait]
