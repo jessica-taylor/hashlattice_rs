@@ -41,6 +41,9 @@ impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MergeLat
         let (v1, v2) = join!(self.db1.clone().get_lattice_max(lid.clone()), self.db2.clone().get_lattice_max(lid.clone()));
         let v1 = v1.unwrap_or_else(|_| default.clone());
         let v2 = v2.unwrap_or_else(|_| default.clone());
+        if v1 == v2 {
+            return Ok(v1);
+        }
         let (c1, c2) = join!(self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v1.clone()),
                              self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v2.clone()));
         let c1 = c1?;
