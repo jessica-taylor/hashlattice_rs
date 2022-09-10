@@ -11,23 +11,25 @@ pub trait LatGraph : Send + Sync {
 
     type Value : Eq + Clone + Serialize + DeserializeOwned + Send + Sync;
 
+    type Cmp :  Clone + Send + Sync;
+
     fn default(&self, lid: Self::LID) -> Result<Self::Value, String>;
 
-    async fn dependencies(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self::LID, Self::Value>>, lid: Self::LID, value: Self::Value) -> Result<BTreeSet<Self::LID>, String>;
+    async fn get_comparer(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self::LID, Self::Value, Self::Cmp>>, lid: Self::LID, value: Self::Value) -> Result<Self::Cmp, String>;
 
-    async fn join(self: Arc<Self>, lid: Self::LID, deps: BTreeMap<Self::LID, Self::Value>, a: Self::Value, b: Self::Value) -> Result<Self::Value, String>;
+    async fn join(self: Arc<Self>, lid: Self::LID, acmp: Self::Cmp, bcmp: Self::Cmp) -> Result<Self::Value, String>;
 }
 
 #[async_trait]
-pub trait LatticeReadDB<LID, Value> : Send + Sync {
+pub trait LatticeReadDB<LID, Value, Cmp> : Send + Sync {
 
-    fn get_lattice(&self) -> Arc<dyn LatGraph<LID = LID, Value = Value>>;
+    fn get_lattice(&self) -> Arc<dyn LatGraph<LID = LID, Value = Value, Cmp = Cmp>>;
 
     async fn get_lattice_max(self: Arc<Self>, lid: LID) -> Option<Value>;
 }
 
 #[async_trait]
-pub trait LatticeWriteDB<LID, Value> : Send + Sync {
+pub trait LatticeWriteDB<LID, Value, Cmp> : LatticeReadDB<LID, Value, Cmp> {
 
     async fn pin_lattice(self: Arc<Self>, lid: LID) -> Result<(), String>;
 
@@ -36,18 +38,24 @@ pub trait LatticeWriteDB<LID, Value> : Send + Sync {
     async fn unpin_lattice(self: Arc<Self>, lid: LID) -> Result<(), String>;
 }
 
-pub struct DependencyLatticeDB<LID, Value, D: LatticeReadDB<LID, Value>> {
+pub struct DependencyLatticeDB<LID, Value, Cmp, D: LatticeReadDB<LID, Value, Cmp>> {
     db: Arc<D>,
     deps: Mutex<BTreeSet<LID>>,
-    phantom: PhantomData<Value>,
+    phantom_v: PhantomData<Value>,
+    phantom_c: PhantomData<Cmp>,
 }
 
-impl <LID: Send + Sync + Clone + 'static, Value: Send + Sync + Clone + 'static, D: LatticeReadDB<LID, Value>> DependencyLatticeDB<LID, Value, D> {
+impl <LID: Send + Sync + Clone + 'static,
+      Value: Send + Sync + Clone + 'static,
+      Cmp,
+      D: LatticeReadDB<LID, Value, Cmp>
+     > DependencyLatticeDB<LID, Value, Cmp, D> {
     pub fn new(db: Arc<D>) -> Self {
         DependencyLatticeDB {
             db,
             deps: Mutex::new(BTreeSet::new()),
-            phantom: PhantomData,
+            phantom_v: PhantomData,
+            phantom_c: PhantomData,
         }
     }
     pub fn deps(&self) -> BTreeSet<LID> {
@@ -56,8 +64,12 @@ impl <LID: Send + Sync + Clone + 'static, Value: Send + Sync + Clone + 'static, 
 }
 
 #[async_trait]
-impl<LID : Send + Sync + Eq + Ord + Clone + 'static, Value : Send + Sync + Eq + Clone + 'static, D: LatticeReadDB<LID, Value> + 'static> LatticeReadDB<LID, Value> for DependencyLatticeDB<LID, Value, D> {
-    fn get_lattice(&self) -> Arc<dyn LatGraph<LID = LID, Value = Value>> {
+impl<LID : Send + Sync + Eq + Ord + Clone + 'static,
+     Value : Send + Sync + Eq + Clone + 'static,
+     Cmp: Send + Sync,
+     D: LatticeReadDB<LID, Value, Cmp> + 'static
+    > LatticeReadDB<LID, Value, Cmp> for DependencyLatticeDB<LID, Value, Cmp, D> {
+    fn get_lattice(&self) -> Arc<dyn LatGraph<LID = LID, Value = Value, Cmp = Cmp>> {
         self.db.get_lattice()
     }
     async fn get_lattice_max(self: Arc<Self>, lid: LID) -> Option<Value> {
@@ -80,41 +92,37 @@ impl<L: LatGraph + 'static> LatGraph for SerializeLatGraph<L> {
 
     type Value = Vec<u8>;
 
+    type Cmp = L::Cmp;
+
     fn default(&self, lid: Self::LID) -> Result<Self::Value, String> {
         let lid = rmp_serde::from_slice(&lid).map_err(|x| x.to_string())?;
         Ok(rmp_serde::to_vec_named(&self.0.default(lid)?).unwrap())
     }
 
-    async fn dependencies(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self::LID, Self::Value>>, lid: Self::LID, value: Self::Value) -> Result<BTreeSet<Self::LID>, String> {
+    async fn get_comparer(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self::LID, Self::Value, L::Cmp>>, lid: Self::LID, value: Self::Value) -> Result<L::Cmp, String> {
         let lid = rmp_serde::from_slice(&lid).map_err(|x| x.to_string())?;
         let value = rmp_serde::from_slice(&value).map_err(|x| x.to_string())?;
         let db = Arc::new(SerializeLatticeReadDB { db, lattice: self.0.clone() });
-        let deps = self.0.clone().dependencies(db, lid, value).await?;
-        Ok(deps.into_iter().map(|x| rmp_serde::to_vec_named(&x).unwrap()).collect())
+        self.0.clone().get_comparer(db, lid, value).await
     }
 
-    async fn join(self: Arc<Self>, lid: Self::LID, deps: BTreeMap<Self::LID, Self::Value>, a: Self::Value, b: Self::Value) -> Result<Self::Value, String> {
+    async fn join(self: Arc<Self>, lid: Self::LID, acmp: L::Cmp, bcmp: L::Cmp) -> Result<Self::Value, String> {
         let lid: L::LID = rmp_serde::from_slice(&lid).map_err(|x| x.to_string())?;
-        let default = self.0.default(lid.clone())?;
-        let a = rmp_serde::from_slice(&a).unwrap_or_else(|_| default.clone());
-        let b = rmp_serde::from_slice(&b).unwrap_or(default);
-        let deps = deps.into_iter().map(|(k, v)| {
-            let k: L::LID = rmp_serde::from_slice(&k).unwrap();
-            let v: L::Value = rmp_serde::from_slice(&v).unwrap();
-            (k, v)
-        }).collect();
-        Ok(rmp_serde::to_vec_named(&self.0.clone().join(lid, deps, a, b).await?).unwrap())
+        Ok(rmp_serde::to_vec_named(&self.0.clone().join(lid, acmp, bcmp).await?).unwrap())
     }
 }
 
-struct SerializeLatticeReadDB<LID, Value> {
-    db: Arc<dyn LatticeReadDB<Vec<u8>, Vec<u8>>>,
-    lattice: Arc<dyn LatGraph<LID = LID, Value = Value>>,
+struct SerializeLatticeReadDB<LID, Value, Cmp> {
+    db: Arc<dyn LatticeReadDB<Vec<u8>, Vec<u8>, Cmp>>,
+    lattice: Arc<dyn LatGraph<LID = LID, Value = Value, Cmp = Cmp>>,
 }
 
 #[async_trait]
-impl <LID: 'static + Serialize + DeserializeOwned + Send + Sync, Value: 'static + Serialize + DeserializeOwned + Send + Sync> LatticeReadDB<LID, Value> for SerializeLatticeReadDB<LID, Value> {
-    fn get_lattice(&self) -> Arc<dyn LatGraph<LID = LID, Value = Value>> {
+impl <LID: 'static + Serialize + DeserializeOwned + Send + Sync,
+      Value: 'static + Serialize + DeserializeOwned + Send + Sync,
+      Cmp
+     > LatticeReadDB<LID, Value, Cmp> for SerializeLatticeReadDB<LID, Value, Cmp> {
+    fn get_lattice(&self) -> Arc<dyn LatGraph<LID = LID, Value = Value, Cmp = Cmp>> {
         self.lattice.clone()
     }
     async fn get_lattice_max(self: Arc<Self>, lid: LID) -> Option<Value> {
@@ -128,9 +136,9 @@ pub trait IsEnum {
     fn get_branch(&self) -> usize;
 }
 
-pub struct EnumLatGraph<LID: IsEnum, Value: IsEnum, L: LatGraph<LID = LID, Value = Value>>(Vec<Arc<L>>);
+pub struct EnumLatGraph<LID: IsEnum, Value: IsEnum, Cmp, L: LatGraph<LID = LID, Value = Value, Cmp = Cmp>>(Vec<Arc<L>>);
 
-impl<LID: IsEnum, Value: IsEnum, L: LatGraph<LID = LID, Value = Value>> EnumLatGraph<LID, Value, L> {
+impl<LID: IsEnum, Value: IsEnum, Cmp, L: LatGraph<LID = LID, Value = Value, Cmp = Cmp>> EnumLatGraph<LID, Value, Cmp, L> {
     pub fn new(l: Vec<Arc<L>>) -> Self {
         EnumLatGraph(l)
     }
@@ -139,14 +147,17 @@ impl<LID: IsEnum, Value: IsEnum, L: LatGraph<LID = LID, Value = Value>> EnumLatG
 #[async_trait]
 impl<LID: IsEnum + Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned + 'static,
      Value: IsEnum + Eq + Clone + Send + Sync + Serialize + DeserializeOwned + 'static,
-     L: LatGraph<LID = LID, Value = Value> + 'static
-    > LatGraph for EnumLatGraph<LID, Value, L> {
+     Cmp: Clone + Send + Sync,
+     L: LatGraph<LID = LID, Value = Value, Cmp = Cmp> + 'static
+    > LatGraph for EnumLatGraph<LID, Value, Cmp, L> {
 
-    type LID = L::LID;
+    type LID = LID;
 
-    type Value = L::Value;
+    type Value = Value;
 
-    fn default(&self, lid: L::LID) -> Result<L::Value, String> {
+    type Cmp = Cmp;
+
+    fn default(&self, lid: LID) -> Result<L::Value, String> {
         let branch = lid.get_branch();
         if branch >= self.0.len() {
             return Err(format!("branch {} out of range", branch));
@@ -154,7 +165,7 @@ impl<LID: IsEnum + Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned
         self.0[branch].default(lid)
     }
 
-    async fn dependencies(self: Arc<Self>, db: Arc<dyn LatticeReadDB<L::LID, L::Value>>, lid: L::LID, value: L::Value) -> Result<BTreeSet<L::LID>, String> {
+    async fn get_comparer(self: Arc<Self>, db: Arc<dyn LatticeReadDB<LID, Value, Cmp>>, lid: LID, value: Value) -> Result<Cmp, String> {
         let branch = lid.get_branch();
         let branch2 = value.get_branch();
         if branch != branch2 {
@@ -164,25 +175,14 @@ impl<LID: IsEnum + Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned
             return Err(format!("branch {} out of range", branch));
         }
         let lattice = &self.0[branch];
-        lattice.clone().dependencies(db, lid, value).await
+        lattice.clone().get_comparer(db, lid, value).await
     }
 
-    async fn join(self: Arc<Self>, lid: L::LID, deps: BTreeMap<L::LID, L::Value>, a: L::Value, b: L::Value) -> Result<L::Value, String> {
+    async fn join(self: Arc<Self>, lid: LID, acmp: Cmp, bcmp: Cmp) -> Result<Value, String> {
         let branch = lid.get_branch();
         if branch >= self.0.len() {
             return Err(format!("branch {} out of range", branch));
         }
-        let lattice = &self.0[branch];
-        let aval = if a.get_branch() == branch {
-            a
-        } else {
-            lattice.default(lid.clone())?
-        };
-        let bval = if b.get_branch() == branch {
-            b
-        } else {
-            lattice.default(lid.clone())?
-        };
-        lattice.clone().join(lid, deps, aval, bval).await
+        self.0[branch].clone().join(lid, acmp, bcmp).await
     }
 }
