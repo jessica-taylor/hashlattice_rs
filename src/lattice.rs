@@ -3,7 +3,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use async_trait::async_trait;
 
 #[async_trait]
-trait Semilattice : Send + Sync {
+pub trait Semilattice : Send + Sync {
 
     type LID : Eq + Ord + Clone + Serialize + DeserializeOwned + Send + Sync;
 
@@ -15,27 +15,40 @@ trait Semilattice : Send + Sync {
 }
 
 #[async_trait]
-trait LatticeReadDB<L: Semilattice> : Send + Sync {
+pub trait LatticeReadDB<L: Semilattice> : Send + Sync {
     async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Option<L::Value>;
 }
 
 #[async_trait]
-trait LatticeWriteDB<L: Semilattice> : LatticeReadDB<L> {
+pub trait LatticeWriteDB<L: Semilattice> : LatticeReadDB<L> {
+
     async fn pin_lattice(self: Arc<Self>, lid: L::LID) -> Result<(), String>;
+
     async fn put_lattice_value(self: Arc<Self>, lid: L::LID, value: L::Value) -> Result<(), String>;
+
     async fn unpin_lattice(self: Arc<Self>, lid: L::LID) -> Result<(), String>;
 }
 
-struct SerializeSemilattice<L: Semilattice>(Arc<L>);
+pub struct SerializeSemilattice<L: Semilattice>(Arc<L>);
+
+impl<L: Semilattice> SerializeSemilattice<L> {
+    pub fn new(l: Arc<L>) -> Self {
+        SerializeSemilattice(l)
+    }
+}
 
 #[async_trait]
 impl<L: Semilattice + 'static> Semilattice for SerializeSemilattice<L> {
+
     type LID = Vec<u8>;
+
     type Value = Vec<u8>;
+
     fn default(&self, lid: Self::LID) -> Result<Self::Value, String> {
         let lid = rmp_serde::from_slice(&lid).map_err(|x| x.to_string())?;
         Ok(rmp_serde::to_vec_named(&self.0.default(lid)?).unwrap())
     }
+
     async fn join(self: Arc<Self>, lid: Self::LID, db: Arc<dyn LatticeReadDB<Self>>, a: Self::Value, b: Self::Value) -> Result<Self::Value, String> {
         let lid: L::LID = rmp_serde::from_slice(&lid).map_err(|x| x.to_string())?;
         let default = self.0.default(lid.clone())?;
@@ -57,18 +70,28 @@ impl <L: Semilattice + 'static> LatticeReadDB<L> for SerializeLatticeReadDB<L> {
     }
 }
 
-struct EnumSemilattice<L: Semilattice>(Vec<Arc<L>>);
+pub struct EnumSemilattice<L: Semilattice>(Vec<Arc<L>>);
+
+impl<L: Semilattice> EnumSemilattice<L> {
+    pub fn new(l: Vec<Arc<L>>) -> Self {
+        EnumSemilattice(l)
+    }
+}
 
 #[async_trait]
 impl<L: Semilattice + 'static> Semilattice for EnumSemilattice<L> {
+
     type LID = (usize, L::LID);
+
     type Value = (usize, L::Value);
+
     fn default(&self, (branch, lid): Self::LID) -> Result<Self::Value, String> {
         if branch >= self.0.len() {
             return Err(format!("branch {} out of range", branch));
         }
         Ok((branch, self.0[branch].default(lid)?))
     }
+
     async fn join(self: Arc<Self>, (branch, lid): Self::LID, db: Arc<dyn LatticeReadDB<Self>>, (a_branch, a): Self::Value, (b_branch, b): Self::Value) -> Result<Self::Value, String> {
         if branch >= self.0.len() {
             return Err(format!("branch {} out of range", branch));
