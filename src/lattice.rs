@@ -11,13 +11,13 @@ pub trait LatGraph : Send + Sync {
 
     type Value : Eq + Clone + Serialize + DeserializeOwned + Send + Sync;
 
-    type Cmp :  Clone + Send + Sync;
+    type Cmp : Clone + Send + Sync;
 
     fn default(&self, lid: Self::LID) -> Result<Self::Value, String>;
 
     async fn get_comparer(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self::LID, Self::Value, Self::Cmp>>, lid: Self::LID, value: Self::Value) -> Result<Self::Cmp, String>;
 
-    async fn join(self: Arc<Self>, lid: Self::LID, acmp: Self::Cmp, bcmp: Self::Cmp) -> Result<Self::Value, String>;
+    fn join(self: Arc<Self>, lid: Self::LID, acmp: Self::Cmp, bcmp: Self::Cmp) -> Result<Self::Value, String>;
 }
 
 #[async_trait]
@@ -106,9 +106,9 @@ impl<L: LatGraph + 'static> LatGraph for SerializeLatGraph<L> {
         self.0.clone().get_comparer(db, lid, value).await
     }
 
-    async fn join(self: Arc<Self>, lid: Self::LID, acmp: L::Cmp, bcmp: L::Cmp) -> Result<Self::Value, String> {
+    fn join(self: Arc<Self>, lid: Self::LID, acmp: L::Cmp, bcmp: L::Cmp) -> Result<Self::Value, String> {
         let lid: L::LID = rmp_serde::from_slice(&lid).map_err(|x| x.to_string())?;
-        Ok(rmp_serde::to_vec_named(&self.0.clone().join(lid, acmp, bcmp).await?).unwrap())
+        Ok(rmp_serde::to_vec_named(&self.0.clone().join(lid, acmp, bcmp)?).unwrap())
     }
 }
 
@@ -178,11 +178,11 @@ impl<LID: IsEnum + Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned
         lattice.clone().get_comparer(db, lid, value).await
     }
 
-    async fn join(self: Arc<Self>, lid: LID, acmp: Cmp, bcmp: Cmp) -> Result<Value, String> {
+    fn join(self: Arc<Self>, lid: LID, acmp: Cmp, bcmp: Cmp) -> Result<Value, String> {
         let branch = lid.get_branch();
         if branch >= self.0.len() {
             return Err(format!("branch {} out of range", branch));
         }
-        self.0[branch].clone().join(lid, acmp, bcmp).await
+        self.0[branch].clone().join(lid, acmp, bcmp)
     }
 }
