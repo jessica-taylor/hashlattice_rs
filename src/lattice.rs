@@ -17,7 +17,7 @@ pub trait LatGraph : Send + Sync {
 
     async fn get_comparable(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self::LID, Self::Value, Self::Cmp>>, lid: Self::LID, value: Self::Value) -> Result<Self::Cmp, String>;
 
-    fn join(self: Arc<Self>, lid: Self::LID, acmp: Self::Cmp, bcmp: Self::Cmp) -> Result<Self::Value, String>;
+    fn join(&self, lid: Self::LID, acmp: Self::Cmp, bcmp: Self::Cmp) -> Result<Self::Value, String>;
 }
 
 #[async_trait]
@@ -25,7 +25,7 @@ pub trait LatticeReadDB<LID, Value, Cmp> : Send + Sync {
 
     fn get_latgraph(&self) -> Arc<dyn LatGraph<LID = LID, Value = Value, Cmp = Cmp>>;
 
-    async fn get_lattice_max(self: Arc<Self>, lid: LID) -> Option<Value>;
+    async fn get_lattice_max(self: Arc<Self>, lid: LID) -> Result<Value, String>;
 }
 
 #[async_trait]
@@ -54,8 +54,11 @@ impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MapLatti
         self.latgraph.clone()
     }
 
-    async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Option<L::Value> {
-        self.values.get(&lid).cloned()
+    async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Result<L::Value, String> {
+        match self.values.get(&lid) {
+            Some(v) => Ok(v.clone()),
+            None => self.latgraph.default(lid)
+        }
     }
 }
 
@@ -93,13 +96,10 @@ impl<LID : Send + Sync + Eq + Ord + Clone + 'static,
     fn get_latgraph(&self) -> Arc<dyn LatGraph<LID = LID, Value = Value, Cmp = Cmp>> {
         self.db.get_latgraph()
     }
-    async fn get_lattice_max(self: Arc<Self>, lid: LID) -> Option<Value> {
-        let val = self.db.clone().get_lattice_max(lid.clone()).await;
-        // TODO: should we put defaults in deps?
-        if let Some(v) = &val {
-            self.deps.lock().unwrap().insert(lid, v.clone());
-        }
-        val
+    async fn get_lattice_max(self: Arc<Self>, lid: LID) -> Result<Value, String> {
+        let val = self.db.clone().get_lattice_max(lid.clone()).await?;
+        self.deps.lock().unwrap().insert(lid, val.clone());
+        Ok(val)
     }
 }
 pub struct SerializeLatGraph<L: LatGraph>(Arc<L>);
@@ -131,7 +131,7 @@ impl<L: LatGraph + 'static> LatGraph for SerializeLatGraph<L> {
         self.0.clone().get_comparable(db, lid, value).await
     }
 
-    fn join(self: Arc<Self>, lid: Self::LID, acmp: L::Cmp, bcmp: L::Cmp) -> Result<Self::Value, String> {
+    fn join(&self, lid: Self::LID, acmp: L::Cmp, bcmp: L::Cmp) -> Result<Self::Value, String> {
         let lid: L::LID = rmp_serde::from_slice(&lid).map_err(|x| x.to_string())?;
         Ok(rmp_serde::to_vec_named(&self.0.clone().join(lid, acmp, bcmp)?).unwrap())
     }
@@ -147,10 +147,10 @@ impl <L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for Seriali
     fn get_latgraph(&self) -> Arc<dyn LatGraph<LID = L::LID, Value = L::Value, Cmp = L::Cmp>> {
         self.latgraph.clone()
     }
-    async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Option<L::Value> {
+    async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Result<L::Value, String> {
         let ser_lid = rmp_serde::to_vec_named(&lid).unwrap();
         let max = self.db.clone().get_lattice_max(ser_lid).await?;
-        Some(rmp_serde::from_slice(&max).unwrap())
+        rmp_serde::from_slice(&max).map_err(|e| e.to_string())
     }
 }
 
@@ -197,7 +197,7 @@ where L::LID: IsEnum, L::Value: IsEnum {
         lattice.clone().get_comparable(db, lid, value).await
     }
 
-    fn join(self: Arc<Self>, lid: L::LID, acmp: L::Cmp, bcmp: L::Cmp) -> Result<L::Value, String> {
+    fn join(&self, lid: L::LID, acmp: L::Cmp, bcmp: L::Cmp) -> Result<L::Value, String> {
         let branch = lid.get_branch();
         if branch >= self.0.len() {
             return Err(format!("branch {} out of range", branch));
