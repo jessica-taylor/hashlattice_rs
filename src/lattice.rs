@@ -23,7 +23,7 @@ pub trait LatGraph : Send + Sync {
 #[async_trait]
 pub trait LatticeReadDB<LID, Value, Cmp> : Send + Sync {
 
-    fn get_lattice(&self) -> Arc<dyn LatGraph<LID = LID, Value = Value, Cmp = Cmp>>;
+    fn get_latgraph(&self) -> Arc<dyn LatGraph<LID = LID, Value = Value, Cmp = Cmp>>;
 
     async fn get_lattice_max(self: Arc<Self>, lid: LID) -> Option<Value>;
 }
@@ -69,8 +69,8 @@ impl<LID : Send + Sync + Eq + Ord + Clone + 'static,
      Cmp: Send + Sync,
      D: LatticeReadDB<LID, Value, Cmp> + 'static
     > LatticeReadDB<LID, Value, Cmp> for DependencyLatticeDB<LID, Value, Cmp, D> {
-    fn get_lattice(&self) -> Arc<dyn LatGraph<LID = LID, Value = Value, Cmp = Cmp>> {
-        self.db.get_lattice()
+    fn get_latgraph(&self) -> Arc<dyn LatGraph<LID = LID, Value = Value, Cmp = Cmp>> {
+        self.db.get_latgraph()
     }
     async fn get_lattice_max(self: Arc<Self>, lid: LID) -> Option<Value> {
         self.deps.lock().unwrap().insert(lid.clone());
@@ -102,7 +102,7 @@ impl<L: LatGraph + 'static> LatGraph for SerializeLatGraph<L> {
     async fn get_comparer(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self::LID, Self::Value, L::Cmp>>, lid: Self::LID, value: Self::Value) -> Result<L::Cmp, String> {
         let lid = rmp_serde::from_slice(&lid).map_err(|x| x.to_string())?;
         let value = rmp_serde::from_slice(&value).map_err(|x| x.to_string())?;
-        let db = Arc::new(SerializeLatticeReadDB::<L> { db, lattice: self.0.clone() });
+        let db = Arc::new(SerializeLatticeReadDB::<L> { db, latgraph: self.0.clone() });
         self.0.clone().get_comparer(db, lid, value).await
     }
 
@@ -114,13 +114,13 @@ impl<L: LatGraph + 'static> LatGraph for SerializeLatGraph<L> {
 
 struct SerializeLatticeReadDB<L: LatGraph> {
     db: Arc<dyn LatticeReadDB<Vec<u8>, Vec<u8>, L::Cmp>>,
-    lattice: Arc<dyn LatGraph<LID = L::LID, Value = L::Value, Cmp = L::Cmp>>,
+    latgraph: Arc<dyn LatGraph<LID = L::LID, Value = L::Value, Cmp = L::Cmp>>,
 }
 
 #[async_trait]
 impl <L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for SerializeLatticeReadDB<L> {
-    fn get_lattice(&self) -> Arc<dyn LatGraph<LID = L::LID, Value = L::Value, Cmp = L::Cmp>> {
-        self.lattice.clone()
+    fn get_latgraph(&self) -> Arc<dyn LatGraph<LID = L::LID, Value = L::Value, Cmp = L::Cmp>> {
+        self.latgraph.clone()
     }
     async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Option<L::Value> {
         let ser_lid = rmp_serde::to_vec_named(&lid).unwrap();
