@@ -39,8 +39,8 @@ impl<L: LatGraph + 'static> LatticeWriteDB<L::LID, L::Value, L::Cmp> for MemoryL
         let default = self.latgraph.default(lid.clone())?;
         let current = self.clone().get_lattice_max(lid.clone()).await.unwrap_or(default.clone());
         let (current_cmp, value_cmp) = join!(
-            self.latgraph.clone().get_comparer(self.clone(), lid.clone(), current.clone()),
-            self.latgraph.clone().get_comparer(self.clone(), lid.clone(), value));
+            self.latgraph.clone().get_comparable(self.clone(), lid.clone(), current.clone()),
+            self.latgraph.clone().get_comparable(self.clone(), lid.clone(), value));
         let joined = self.latgraph.clone().join(lid.clone(), current_cmp?, value_cmp?)?;
         if joined != current {
             self.maxes.lock().unwrap().insert(lid, joined);

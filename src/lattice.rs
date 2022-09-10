@@ -15,7 +15,7 @@ pub trait LatGraph : Send + Sync {
 
     fn default(&self, lid: Self::LID) -> Result<Self::Value, String>;
 
-    async fn get_comparer(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self::LID, Self::Value, Self::Cmp>>, lid: Self::LID, value: Self::Value) -> Result<Self::Cmp, String>;
+    async fn get_comparable(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self::LID, Self::Value, Self::Cmp>>, lid: Self::LID, value: Self::Value) -> Result<Self::Cmp, String>;
 
     fn join(self: Arc<Self>, lid: Self::LID, acmp: Self::Cmp, bcmp: Self::Cmp) -> Result<Self::Value, String>;
 }
@@ -99,11 +99,11 @@ impl<L: LatGraph + 'static> LatGraph for SerializeLatGraph<L> {
         Ok(rmp_serde::to_vec_named(&self.0.default(lid)?).unwrap())
     }
 
-    async fn get_comparer(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self::LID, Self::Value, L::Cmp>>, lid: Self::LID, value: Self::Value) -> Result<L::Cmp, String> {
+    async fn get_comparable(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self::LID, Self::Value, L::Cmp>>, lid: Self::LID, value: Self::Value) -> Result<L::Cmp, String> {
         let lid = rmp_serde::from_slice(&lid).map_err(|x| x.to_string())?;
         let value = rmp_serde::from_slice(&value).map_err(|x| x.to_string())?;
         let db = Arc::new(SerializeLatticeReadDB::<L> { db, latgraph: self.0.clone() });
-        self.0.clone().get_comparer(db, lid, value).await
+        self.0.clone().get_comparable(db, lid, value).await
     }
 
     fn join(self: Arc<Self>, lid: Self::LID, acmp: L::Cmp, bcmp: L::Cmp) -> Result<Self::Value, String> {
@@ -159,7 +159,7 @@ where L::LID: IsEnum, L::Value: IsEnum {
         self.0[branch].default(lid)
     }
 
-    async fn get_comparer(self: Arc<Self>, db: Arc<dyn LatticeReadDB<L::LID, L::Value, L::Cmp>>, lid: L::LID, value: L::Value) -> Result<L::Cmp, String> {
+    async fn get_comparable(self: Arc<Self>, db: Arc<dyn LatticeReadDB<L::LID, L::Value, L::Cmp>>, lid: L::LID, value: L::Value) -> Result<L::Cmp, String> {
         let branch = lid.get_branch();
         let branch2 = value.get_branch();
         if branch != branch2 {
@@ -169,7 +169,7 @@ where L::LID: IsEnum, L::Value: IsEnum {
             return Err(format!("branch {} out of range", branch));
         }
         let lattice = &self.0[branch];
-        lattice.clone().get_comparer(db, lid, value).await
+        lattice.clone().get_comparable(db, lid, value).await
     }
 
     fn join(self: Arc<Self>, lid: L::LID, acmp: L::Cmp, bcmp: L::Cmp) -> Result<L::Value, String> {
