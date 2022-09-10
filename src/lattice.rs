@@ -16,6 +16,9 @@ pub trait Semilattice : Send + Sync {
 
 #[async_trait]
 pub trait LatticeReadDB<L: Semilattice> : Send + Sync {
+
+    fn get_lattice(&self) -> Arc<L>;
+
     async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Option<L::Value>;
 }
 
@@ -52,20 +55,26 @@ impl<L: Semilattice + 'static> Semilattice for SerializeSemilattice<L> {
     async fn join(self: Arc<Self>, lid: Self::LID, db: Arc<dyn LatticeReadDB<Self>>, a: Self::Value, b: Self::Value) -> Result<Self::Value, String> {
         let lid: L::LID = rmp_serde::from_slice(&lid).map_err(|x| x.to_string())?;
         let default = self.0.default(lid.clone())?;
-        let a = rmp_serde::from_slice(&a).unwrap_or(default.clone());
+        let a = rmp_serde::from_slice(&a).unwrap_or_else(|_| default.clone());
         let b = rmp_serde::from_slice(&b).unwrap_or(default);
-        let db = Arc::new(SerializeLatticeReadDB(db));
+        let db = Arc::new(SerializeLatticeReadDB { db, lattice: self.0.clone() });
         Ok(rmp_serde::to_vec_named(&self.0.clone().join(lid, db, a, b).await?).unwrap())
     }
 }
 
-struct SerializeLatticeReadDB<L: Semilattice>(Arc<dyn LatticeReadDB<SerializeSemilattice<L>>>);
+struct SerializeLatticeReadDB<L: Semilattice> {
+    db: Arc<dyn LatticeReadDB<SerializeSemilattice<L>>>,
+    lattice: Arc<L>,
+}
 
 #[async_trait]
 impl <L: Semilattice + 'static> LatticeReadDB<L> for SerializeLatticeReadDB<L> {
+    fn get_lattice(&self) -> Arc<L> {
+        self.lattice.clone()
+    }
     async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Option<L::Value> {
         let ser_lid = rmp_serde::to_vec_named(&lid).unwrap();
-        let max = self.0.clone().get_lattice_max(ser_lid).await?;
+        let max = self.db.clone().get_lattice_max(ser_lid).await?;
         Some(rmp_serde::from_slice(&max).unwrap())
     }
 }
@@ -107,18 +116,22 @@ impl<L: Semilattice + 'static> Semilattice for EnumSemilattice<L> {
         } else {
             lattice.default(lid.clone())?
         };
-        let db = Arc::new(EnumLatticeReadDB {db, branch});
+        let db = Arc::new(EnumLatticeReadDB {db, branch, lattice: lattice.clone()});
         Ok((branch, lattice.clone().join(lid, db, aval, bval).await?))
     }
 }
 
 struct EnumLatticeReadDB<L: Semilattice> {
-    db: Arc<dyn LatticeReadDB<EnumSemilattice<L>>>,
     branch: usize,
+    db: Arc<dyn LatticeReadDB<EnumSemilattice<L>>>,
+    lattice: Arc<L>,
 }
 
 #[async_trait]
 impl <L: Semilattice + 'static> LatticeReadDB<L> for EnumLatticeReadDB<L> {
+    fn get_lattice(&self) -> Arc<L> {
+        self.lattice.clone()
+    }
     async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Option<L::Value> {
         let (max_branch, max_v) = self.db.clone().get_lattice_max((self.branch, lid)).await?;
         if max_branch != self.branch {
