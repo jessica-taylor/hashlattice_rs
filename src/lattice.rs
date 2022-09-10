@@ -133,28 +133,25 @@ pub trait IsEnum {
     fn get_branch(&self) -> usize;
 }
 
-pub struct EnumLatGraph<LID: IsEnum, Value: IsEnum, Cmp, L: LatGraph<LID = LID, Value = Value, Cmp = Cmp>>(Vec<Arc<L>>);
+pub struct EnumLatGraph<L: LatGraph>(Vec<Arc<L>>);
 
-impl<LID: IsEnum, Value: IsEnum, Cmp, L: LatGraph<LID = LID, Value = Value, Cmp = Cmp>> EnumLatGraph<LID, Value, Cmp, L> {
+impl<L: LatGraph> EnumLatGraph<L> {
     pub fn new(l: Vec<Arc<L>>) -> Self {
         EnumLatGraph(l)
     }
 }
 
 #[async_trait]
-impl<LID: IsEnum + Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned + 'static,
-     Value: IsEnum + Eq + Clone + Send + Sync + Serialize + DeserializeOwned + 'static,
-     Cmp: Clone + Send + Sync,
-     L: LatGraph<LID = LID, Value = Value, Cmp = Cmp> + 'static
-    > LatGraph for EnumLatGraph<LID, Value, Cmp, L> {
+impl<L: LatGraph + 'static> LatGraph for EnumLatGraph<L>
+where L::LID: IsEnum, L::Value: IsEnum {
+    
+    type LID = L::LID;
 
-    type LID = LID;
+    type Value = L::Value;
 
-    type Value = Value;
+    type Cmp = L::Cmp;
 
-    type Cmp = Cmp;
-
-    fn default(&self, lid: LID) -> Result<L::Value, String> {
+    fn default(&self, lid: L::LID) -> Result<L::Value, String> {
         let branch = lid.get_branch();
         if branch >= self.0.len() {
             return Err(format!("branch {} out of range", branch));
@@ -162,7 +159,7 @@ impl<LID: IsEnum + Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned
         self.0[branch].default(lid)
     }
 
-    async fn get_comparer(self: Arc<Self>, db: Arc<dyn LatticeReadDB<LID, Value, Cmp>>, lid: LID, value: Value) -> Result<Cmp, String> {
+    async fn get_comparer(self: Arc<Self>, db: Arc<dyn LatticeReadDB<L::LID, L::Value, L::Cmp>>, lid: L::LID, value: L::Value) -> Result<L::Cmp, String> {
         let branch = lid.get_branch();
         let branch2 = value.get_branch();
         if branch != branch2 {
@@ -175,7 +172,7 @@ impl<LID: IsEnum + Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned
         lattice.clone().get_comparer(db, lid, value).await
     }
 
-    fn join(self: Arc<Self>, lid: LID, acmp: Cmp, bcmp: Cmp) -> Result<Value, String> {
+    fn join(self: Arc<Self>, lid: L::LID, acmp: L::Cmp, bcmp: L::Cmp) -> Result<L::Value, String> {
         let branch = lid.get_branch();
         if branch >= self.0.len() {
             return Err(format!("branch {} out of range", branch));
