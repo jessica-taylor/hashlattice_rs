@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use serde::{Serialize, de::DeserializeOwned};
 use async_trait::async_trait;
 
@@ -35,6 +35,33 @@ pub trait LatticeWriteDB<L: LatGraph> : LatticeReadDB<L> {
     async fn unpin_lattice(self: Arc<Self>, lid: L::LID) -> Result<(), String>;
 }
 
+pub struct DependencyLatticeDB<L: LatGraph, D: LatticeReadDB<L>> {
+    db: Arc<D>,
+    deps: Mutex<BTreeSet<L::LID>>,
+}
+
+impl <L: LatGraph, D: LatticeReadDB<L>> DependencyLatticeDB<L, D> {
+    pub fn new(db: Arc<D>) -> Self {
+        DependencyLatticeDB {
+            db,
+            deps: Mutex::new(BTreeSet::new()),
+        }
+    }
+    pub fn deps(&self) -> BTreeSet<L::LID> {
+        self.deps.lock().unwrap().clone()
+    }
+}
+
+#[async_trait]
+impl<L: LatGraph + 'static, D: LatticeReadDB<L> + 'static> LatticeReadDB<L> for DependencyLatticeDB<L, D> {
+    fn get_lattice(&self) -> Arc<L> {
+        self.db.get_lattice()
+    }
+    async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Option<L::Value> {
+        self.deps.lock().unwrap().insert(lid.clone());
+        self.db.clone().get_lattice_max(lid).await
+    }
+}
 pub struct SerializeLatGraph<L: LatGraph>(Arc<L>);
 
 impl<L: LatGraph> SerializeLatGraph<L> {
