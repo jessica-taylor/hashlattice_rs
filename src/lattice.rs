@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap};
 use std::sync::{Arc, Mutex};
 use std::marker::PhantomData;
 use serde::{Serialize, de::DeserializeOwned};
@@ -31,16 +31,37 @@ pub trait LatticeReadDB<LID, Value, Cmp> : Send + Sync {
 #[async_trait]
 pub trait LatticeWriteDB<LID, Value, Cmp> : LatticeReadDB<LID, Value, Cmp> {
 
-    async fn pin_lattice(self: Arc<Self>, lid: LID) -> Result<(), String>;
-
     async fn put_lattice_value(self: Arc<Self>, lid: LID, value: Value) -> Result<(), String>;
+}
 
-    async fn unpin_lattice(self: Arc<Self>, lid: LID) -> Result<(), String>;
+pub struct MapLatticeReadDB<L: LatGraph> {
+    latgraph: Arc<L>,
+    values: Arc<BTreeMap<L::LID, L::Value>>,
+}
+
+impl<L: LatGraph> MapLatticeReadDB<L> {
+    pub fn new(latgraph: Arc<L>, values: BTreeMap<L::LID, L::Value>) -> Self {
+        Self {
+            latgraph,
+            values: Arc::new(values)
+        }
+    }
+}
+
+#[async_trait]
+impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MapLatticeReadDB<L> {
+    fn get_latgraph(&self) -> Arc<dyn LatGraph<LID = L::LID, Value = L::Value, Cmp = L::Cmp>> {
+        self.latgraph.clone()
+    }
+
+    async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Option<L::Value> {
+        self.values.get(&lid).cloned()
+    }
 }
 
 pub struct DependencyLatticeDB<LID, Value, Cmp, D: LatticeReadDB<LID, Value, Cmp>> {
     db: Arc<D>,
-    deps: Mutex<BTreeSet<LID>>,
+    deps: Mutex<BTreeMap<LID, Value>>,
     phantom_v: PhantomData<Value>,
     phantom_c: PhantomData<Cmp>,
 }
@@ -53,12 +74,12 @@ impl <LID: Send + Sync + Clone + 'static,
     pub fn new(db: Arc<D>) -> Self {
         DependencyLatticeDB {
             db,
-            deps: Mutex::new(BTreeSet::new()),
+            deps: Mutex::new(BTreeMap::new()),
             phantom_v: PhantomData,
             phantom_c: PhantomData,
         }
     }
-    pub fn deps(&self) -> BTreeSet<LID> {
+    pub fn deps(&self) -> BTreeMap<LID, Value> {
         self.deps.lock().unwrap().clone()
     }
 }
@@ -73,8 +94,12 @@ impl<LID : Send + Sync + Eq + Ord + Clone + 'static,
         self.db.get_latgraph()
     }
     async fn get_lattice_max(self: Arc<Self>, lid: LID) -> Option<Value> {
-        self.deps.lock().unwrap().insert(lid.clone());
-        self.db.clone().get_lattice_max(lid).await
+        let val = self.db.clone().get_lattice_max(lid.clone()).await;
+        // TODO: should we put defaults in deps?
+        if let Some(v) = &val {
+            self.deps.lock().unwrap().insert(lid, v.clone());
+        }
+        val
     }
 }
 pub struct SerializeLatGraph<L: LatGraph>(Arc<L>);
