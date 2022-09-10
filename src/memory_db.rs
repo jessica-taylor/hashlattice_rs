@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use async_mutex::Mutex as AsyncMutex;
 use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use async_recursion::async_recursion;
@@ -28,6 +29,7 @@ pub struct MergeLatticeReadDB<L: LatGraph + 'static> {
     latgraph: Arc<L>,
     db1: Arc<dyn LatticeWriteDB<L::LID, L::Value, L::Cmp>>,
     db2: Arc<dyn LatticeWriteDB<L::LID, L::Value, L::Cmp>>,
+    mutexes: Mutex<BTreeMap<L::LID, Arc<AsyncMutex<()>>>>,
 }
 
 #[async_trait]
@@ -37,6 +39,8 @@ impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MergeLat
     }
 
     async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Result<L::Value, String> {
+        let mutex = self.mutexes.lock().unwrap().entry(lid.clone()).or_insert(Arc::new(AsyncMutex::new(()))).clone();
+        let lock = mutex.lock().await;
         let default = self.latgraph.default(lid.clone())?;
         let (v1, v2) = join!(self.db1.clone().get_lattice_max(lid.clone()), self.db2.clone().get_lattice_max(lid.clone()));
         let v1 = v1.unwrap_or_else(|_| default.clone());
@@ -44,13 +48,12 @@ impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MergeLat
         if v1 == v2 {
             return Ok(v1);
         }
-        let c1 = self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v1.clone()).await?;
-        let c2 = self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v2.clone()).await?;
-        // note: interleaving can mess up caching
-        // let (c1, c2) = join!(self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v1.clone()),
-        //                      self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v2.clone()));
-        // let c1 = c1?;
-        // let c2 = c2?;
+        // let c1 = self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v1.clone()).await?;
+        // let c2 = self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v2.clone()).await?;
+        let (c1, c2) = join!(self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v1.clone()),
+                             self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v2.clone()));
+        let c1 = c1?;
+        let c2 = c2?;
         let joined = self.latgraph.join(lid.clone(), c1, c2)?;
         let (res1, res2) = join!(self.db1.clone().put_lattice_value(lid.clone(), joined.clone()),
                                  self.db2.clone().put_lattice_value(lid.clone(), joined.clone()));
