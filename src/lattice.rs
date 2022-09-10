@@ -11,6 +11,8 @@ pub trait Semilattice : Send + Sync {
 
     fn default(&self, lid: Self::LID) -> Result<Self::Value, String>;
 
+    async fn dependencies(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self>>, lid: Self::LID, value: Self::Value) -> Result<Vec<Self::LID>, String>;
+
     async fn join(self: Arc<Self>, lid: Self::LID, db: Arc<dyn LatticeReadDB<Self>>, a: Self::Value, b: Self::Value) -> Result<Self::Value, String>;
 }
 
@@ -50,6 +52,14 @@ impl<L: Semilattice + 'static> Semilattice for SerializeSemilattice<L> {
     fn default(&self, lid: Self::LID) -> Result<Self::Value, String> {
         let lid = rmp_serde::from_slice(&lid).map_err(|x| x.to_string())?;
         Ok(rmp_serde::to_vec_named(&self.0.default(lid)?).unwrap())
+    }
+
+    async fn dependencies(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self>>, lid: Self::LID, value: Self::Value) -> Result<Vec<Self::LID>, String> {
+        let lid = rmp_serde::from_slice(&lid).map_err(|x| x.to_string())?;
+        let value = rmp_serde::from_slice(&value).map_err(|x| x.to_string())?;
+        let db = Arc::new(SerializeLatticeReadDB { db, lattice: self.0.clone() });
+        let deps = self.0.clone().dependencies(db, lid, value).await?;
+        Ok(deps.into_iter().map(|x| rmp_serde::to_vec_named(&x).unwrap()).collect())
     }
 
     async fn join(self: Arc<Self>, lid: Self::LID, db: Arc<dyn LatticeReadDB<Self>>, a: Self::Value, b: Self::Value) -> Result<Self::Value, String> {
@@ -99,6 +109,19 @@ impl<L: Semilattice + 'static> Semilattice for EnumSemilattice<L> {
             return Err(format!("branch {} out of range", branch));
         }
         Ok((branch, self.0[branch].default(lid)?))
+    }
+
+    async fn dependencies(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self>>, (branch, lid): Self::LID, (branch2, value): Self::Value) -> Result<Vec<Self::LID>, String> {
+        if branch != branch2 {
+            return Err(format!("branch {} != {}", branch, branch2));
+        }
+        if branch >= self.0.len() {
+            return Err(format!("branch {} out of range", branch));
+        }
+        let lattice = &self.0[branch];
+        let db = Arc::new(EnumLatticeReadDB {db, branch, lattice: lattice.clone()});
+        let deps = lattice.clone().dependencies(db, lid, value).await?;
+        Ok(deps.into_iter().map(|x| (branch, x)).collect())
     }
 
     async fn join(self: Arc<Self>, (branch, lid): Self::LID, db: Arc<dyn LatticeReadDB<Self>>, (a_branch, a): Self::Value, (b_branch, b): Self::Value) -> Result<Self::Value, String> {
