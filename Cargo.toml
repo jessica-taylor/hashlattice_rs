@@ -6,3 +6,8 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+rmp-serde = { version = "0.15.4", features = ["serde128"] }
+serde = {version = "1.0", features = ["derive"]}
+async-trait = "0.1"
+async-recursion = "1.0"
+async-mutex = "1.4"
