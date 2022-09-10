@@ -3,7 +3,7 @@ use serde::{Serialize, de::DeserializeOwned};
 use async_trait::async_trait;
 
 #[async_trait]
-pub trait Semilattice : Send + Sync {
+pub trait LatGraph : Send + Sync {
 
     type LID : Eq + Ord + Clone + Serialize + DeserializeOwned + Send + Sync;
 
@@ -17,7 +17,7 @@ pub trait Semilattice : Send + Sync {
 }
 
 #[async_trait]
-pub trait LatticeReadDB<L: Semilattice> : Send + Sync {
+pub trait LatticeReadDB<L: LatGraph> : Send + Sync {
 
     fn get_lattice(&self) -> Arc<L>;
 
@@ -25,7 +25,7 @@ pub trait LatticeReadDB<L: Semilattice> : Send + Sync {
 }
 
 #[async_trait]
-pub trait LatticeWriteDB<L: Semilattice> : LatticeReadDB<L> {
+pub trait LatticeWriteDB<L: LatGraph> : LatticeReadDB<L> {
 
     async fn pin_lattice(self: Arc<Self>, lid: L::LID) -> Result<(), String>;
 
@@ -34,16 +34,16 @@ pub trait LatticeWriteDB<L: Semilattice> : LatticeReadDB<L> {
     async fn unpin_lattice(self: Arc<Self>, lid: L::LID) -> Result<(), String>;
 }
 
-pub struct SerializeSemilattice<L: Semilattice>(Arc<L>);
+pub struct SerializeLatGraph<L: LatGraph>(Arc<L>);
 
-impl<L: Semilattice> SerializeSemilattice<L> {
+impl<L: LatGraph> SerializeLatGraph<L> {
     pub fn new(l: Arc<L>) -> Self {
-        SerializeSemilattice(l)
+        SerializeLatGraph(l)
     }
 }
 
 #[async_trait]
-impl<L: Semilattice + 'static> Semilattice for SerializeSemilattice<L> {
+impl<L: LatGraph + 'static> LatGraph for SerializeLatGraph<L> {
 
     type LID = Vec<u8>;
 
@@ -72,13 +72,13 @@ impl<L: Semilattice + 'static> Semilattice for SerializeSemilattice<L> {
     }
 }
 
-struct SerializeLatticeReadDB<L: Semilattice> {
-    db: Arc<dyn LatticeReadDB<SerializeSemilattice<L>>>,
+struct SerializeLatticeReadDB<L: LatGraph> {
+    db: Arc<dyn LatticeReadDB<SerializeLatGraph<L>>>,
     lattice: Arc<L>,
 }
 
 #[async_trait]
-impl <L: Semilattice + 'static> LatticeReadDB<L> for SerializeLatticeReadDB<L> {
+impl <L: LatGraph + 'static> LatticeReadDB<L> for SerializeLatticeReadDB<L> {
     fn get_lattice(&self) -> Arc<L> {
         self.lattice.clone()
     }
@@ -89,16 +89,16 @@ impl <L: Semilattice + 'static> LatticeReadDB<L> for SerializeLatticeReadDB<L> {
     }
 }
 
-pub struct EnumSemilattice<L: Semilattice>(Vec<Arc<L>>);
+pub struct EnumLatGraph<L: LatGraph>(Vec<Arc<L>>);
 
-impl<L: Semilattice> EnumSemilattice<L> {
+impl<L: LatGraph> EnumLatGraph<L> {
     pub fn new(l: Vec<Arc<L>>) -> Self {
-        EnumSemilattice(l)
+        EnumLatGraph(l)
     }
 }
 
 #[async_trait]
-impl<L: Semilattice + 'static> Semilattice for EnumSemilattice<L> {
+impl<L: LatGraph + 'static> LatGraph for EnumLatGraph<L> {
 
     type LID = (usize, L::LID);
 
@@ -144,14 +144,14 @@ impl<L: Semilattice + 'static> Semilattice for EnumSemilattice<L> {
     }
 }
 
-struct EnumLatticeReadDB<L: Semilattice> {
+struct EnumLatticeReadDB<L: LatGraph> {
     branch: usize,
-    db: Arc<dyn LatticeReadDB<EnumSemilattice<L>>>,
+    db: Arc<dyn LatticeReadDB<EnumLatGraph<L>>>,
     lattice: Arc<L>,
 }
 
 #[async_trait]
-impl <L: Semilattice + 'static> LatticeReadDB<L> for EnumLatticeReadDB<L> {
+impl <L: LatGraph + 'static> LatticeReadDB<L> for EnumLatticeReadDB<L> {
     fn get_lattice(&self) -> Arc<L> {
         self.lattice.clone()
     }

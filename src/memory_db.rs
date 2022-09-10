@@ -2,15 +2,15 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 
-use super::lattice::{Semilattice, LatticeReadDB, LatticeWriteDB};
+use super::lattice::{LatGraph, LatticeReadDB, LatticeWriteDB};
 
-pub struct MemoryLatticeDB<L: Semilattice> {
+pub struct MemoryLatticeDB<L: LatGraph> {
     lattice: Arc<L>,
     maxes: Mutex<BTreeMap<L::LID, L::Value>>,
     accesses: Mutex<Vec<Vec<L::LID>>>,
 }
 
-impl<L: Semilattice> MemoryLatticeDB<L> {
+impl<L: LatGraph> MemoryLatticeDB<L> {
     pub fn new(lattice: Arc<L>) -> Self {
         MemoryLatticeDB {
             lattice,
@@ -35,7 +35,7 @@ impl<L: Semilattice> MemoryLatticeDB<L> {
 }
 
 #[async_trait]
-impl<L: Semilattice + 'static> LatticeReadDB<L> for MemoryLatticeDB<L> {
+impl<L: LatGraph + 'static> LatticeReadDB<L> for MemoryLatticeDB<L> {
     fn get_lattice(&self) -> Arc<L> {
         self.lattice.clone()
     }
@@ -46,7 +46,7 @@ impl<L: Semilattice + 'static> LatticeReadDB<L> for MemoryLatticeDB<L> {
 }
 
 #[async_trait]
-impl<L: Semilattice + 'static> LatticeWriteDB<L> for MemoryLatticeDB<L> {
+impl<L: LatGraph + 'static> LatticeWriteDB<L> for MemoryLatticeDB<L> {
     async fn pin_lattice(self: Arc<Self>, lid: L::LID) -> Result<(), String> {
         Ok(())
     }
