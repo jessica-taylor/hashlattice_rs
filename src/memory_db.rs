@@ -44,10 +44,13 @@ impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MergeLat
         if v1 == v2 {
             return Ok(v1);
         }
-        let (c1, c2) = join!(self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v1.clone()),
-                             self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v2.clone()));
-        let c1 = c1?;
-        let c2 = c2?;
+        let c1 = self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v1.clone()).await?;
+        let c2 = self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v2.clone()).await?;
+        // note: interleaving can mess up caching
+        // let (c1, c2) = join!(self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v1.clone()),
+        //                      self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v2.clone()));
+        // let c1 = c1?;
+        // let c2 = c2?;
         let joined = self.latgraph.join(lid.clone(), c1, c2)?;
         let (res1, res2) = join!(self.db1.clone().put_lattice_value(lid.clone(), joined.clone()),
                                  self.db2.clone().put_lattice_value(lid.clone(), joined.clone()));
