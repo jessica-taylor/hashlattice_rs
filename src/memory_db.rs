@@ -1,13 +1,13 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
+use futures::{join, future::join_all};
 
 use super::lattice::{LatGraph, LatticeReadDB, LatticeWriteDB};
 
 pub struct MemoryLatticeDB<L: LatGraph> {
     lattice: Arc<L>,
     maxes: Mutex<BTreeMap<L::LID, L::Value>>,
-    accesses: Mutex<Vec<Vec<L::LID>>>,
 }
 
 impl<L: LatGraph> MemoryLatticeDB<L> {
@@ -15,22 +15,7 @@ impl<L: LatGraph> MemoryLatticeDB<L> {
         MemoryLatticeDB {
             lattice,
             maxes: Mutex::new(BTreeMap::new()),
-            accesses: Mutex::new(Vec::new()),
         }
-    }
-    fn push_accesses(&self) {
-        let mut accesses = self.accesses.lock().unwrap();
-        accesses.push(Vec::new());
-    }
-    fn add_access(&self, lid: L::LID) {
-        let mut accesses = self.accesses.lock().unwrap();
-        for acc_list in accesses.iter_mut() {
-            acc_list.push(lid.clone());
-        }
-    }
-    fn pop_accesses(&self) -> Vec<L::LID> {
-        let mut accesses = self.accesses.lock().unwrap();
-        accesses.pop().unwrap()
     }
 }
 
@@ -40,7 +25,6 @@ impl<L: LatGraph + 'static> LatticeReadDB<L> for MemoryLatticeDB<L> {
         self.lattice.clone()
     }
     async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Option<L::Value> {
-        self.add_access(lid.clone());
         self.maxes.lock().unwrap().get(&lid).cloned()
     }
 }
@@ -53,10 +37,19 @@ impl<L: LatGraph + 'static> LatticeWriteDB<L> for MemoryLatticeDB<L> {
 
     async fn put_lattice_value(self: Arc<Self>, lid: L::LID, value: L::Value) -> Result<(), String> {
         let default = self.lattice.default(lid.clone())?;
-        let current = self.clone().get_lattice_max(lid.clone()).await.unwrap_or(default);
-        self.push_accesses();
-        let joined = self.lattice.clone().join(lid.clone(), self.clone(), current.clone(), value).await?;
-        let accesses = self.pop_accesses();
+        let current = self.clone().get_lattice_max(lid.clone()).await.unwrap_or(default.clone());
+        let (current_deps, value_deps) = join!(
+            self.lattice.clone().dependencies(self.clone(), lid.clone(), current.clone()),
+            self.lattice.clone().dependencies(self.clone(), lid.clone(), value.clone()));
+        let self2 = self.clone();
+        let kvs = join_all(current_deps?.union(&value_deps?).into_iter().map(move |lid| {
+            let self3 = self2.clone();
+            let default = default.clone();
+            async move {
+                (lid.clone(), self3.clone().get_lattice_max(lid.clone()).await.unwrap_or(default.clone()))
+            }
+        })).await;
+        let joined = self.lattice.clone().join(lid.clone(), BTreeMap::from_iter(kvs), current.clone(), value).await?;
         if joined != current {
             self.maxes.lock().unwrap().insert(lid, joined);
         }
