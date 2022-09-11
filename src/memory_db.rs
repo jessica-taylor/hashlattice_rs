@@ -77,12 +77,18 @@ pub struct MemoryLatticeDB<L: LatGraph> {
     maxes: Mutex<BTreeMap<L::LID, L::Value>>,
 }
 
-impl<L: LatGraph> MemoryLatticeDB<L> {
+impl<L: LatGraph + 'static> MemoryLatticeDB<L> {
     pub fn new(latgraph: Arc<L>) -> Self {
         MemoryLatticeDB {
             latgraph,
             maxes: Mutex::new(BTreeMap::new()),
         }
+    }
+    async fn get_dependencies(self: Arc<Self>, lid: L::LID) -> Result<Vec<L::LID>, String> {
+        let dep_db = Arc::new(DependencyLatticeDB::new(self.clone()));
+        let val = self.clone().get_lattice_max(lid.clone()).await?;
+        let _cmp = self.latgraph.clone().get_comparable(dep_db.clone(), lid, val).await?;
+        Ok(dep_db.deps().keys().map(|k| k.clone()).collect())
     }
 }
 
@@ -113,10 +119,9 @@ impl<L: LatGraph + 'static> LatticeWriteDB<L::LID, L::Value, L::Cmp> for MemoryL
         //   wait! is it more efficient to interleave merge steps with dep-update steps???
         let default = self.latgraph.default(lid.clone())?;
         let current = self.clone().get_lattice_max(lid.clone()).await.unwrap_or(default.clone());
-        let dep_db = Arc::new(DependencyLatticeDB::new(self.clone()));
         let (current_cmp, value_cmp) = join!(
-            self.latgraph.clone().get_comparable(dep_db.clone(), lid.clone(), current.clone()),
-            self.latgraph.clone().get_comparable(dep_db.clone(), lid.clone(), value));
+            self.latgraph.clone().get_comparable(self.clone(), lid.clone(), current.clone()),
+            self.latgraph.clone().get_comparable(self.clone(), lid.clone(), value));
         let joined = self.latgraph.clone().join(lid.clone(), current_cmp?, value_cmp?)?;
         if joined != current {
             self.maxes.lock().unwrap().insert(lid, joined);
