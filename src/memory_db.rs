@@ -32,6 +32,17 @@ pub struct MergeLatticeReadDB<L: LatGraph + 'static> {
     mutexes: Mutex<BTreeMap<L::LID, Arc<AsyncMutex<()>>>>,
 }
 
+impl<L: LatGraph + 'static> MergeLatticeReadDB<L> {
+    pub fn new(
+        latgraph: Arc<L>,
+        db1: Arc<dyn LatticeWriteDB<L::LID, L::Value, L::Cmp>>,
+        db2: Arc<dyn LatticeWriteDB<L::LID, L::Value, L::Cmp>>) -> Self {
+        Self {
+            latgraph, db1, db2, mutexes: Mutex::new(BTreeMap::new())
+        }
+    }
+}
+
 #[async_trait]
 impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MergeLatticeReadDB<L> {
     fn get_latgraph(&self) -> Arc<dyn LatGraph<LID = L::LID, Value = L::Value, Cmp = L::Cmp>> {
@@ -48,8 +59,6 @@ impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MergeLat
         if v1 == v2 {
             return Ok(v1);
         }
-        // let c1 = self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v1.clone()).await?;
-        // let c2 = self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v2.clone()).await?;
         let (c1, c2) = join!(self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v1.clone()),
                              self.latgraph.clone().get_comparable(self.clone(), lid.clone(), v2.clone()));
         let c1 = c1?;
@@ -63,43 +72,55 @@ impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MergeLat
     }
 }
 
-// pub struct MemoryLatticeDB<L: LatGraph> {
-//     latgraph: Arc<L>,
-//     maxes: Mutex<BTreeMap<L::LID, L::Value>>,
-// }
-// 
-// impl<L: LatGraph> MemoryLatticeDB<L> {
-//     pub fn new(latgraph: Arc<L>) -> Self {
-//         MemoryLatticeDB {
-//             latgraph,
-//             maxes: Mutex::new(BTreeMap::new()),
-//         }
-//     }
-// }
-// 
-// #[async_trait]
-// impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MemoryLatticeDB<L> {
-//     fn get_latgraph(&self) -> Arc<dyn LatGraph<LID = L::LID, Value = L::Value, Cmp = L::Cmp>> {
-//         self.latgraph.clone()
-//     }
-//     async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Result<L::Value, String> {
-//         self.maxes.lock().unwrap().get(&lid).cloned()
-//     }
-// }
-// 
-// #[async_trait]
-// impl<L: LatGraph + 'static> LatticeWriteDB<L::LID, L::Value, L::Cmp> for MemoryLatticeDB<L> {
-//     async fn put_lattice_value(self: Arc<Self>, lid: L::LID, value: L::Value) -> Result<(), String> {
-//         let default = self.latgraph.default(lid.clone())?;
-//         let current = self.clone().get_lattice_max(lid.clone()).await.unwrap_or(default.clone());
-//         let dep_db = Arc::new(DependencyLatticeDB::new(self.clone()));
-//         let (current_cmp, value_cmp) = join!(
-//             self.latgraph.clone().get_comparable(dep_db.clone(), lid.clone(), current.clone()),
-//             self.latgraph.clone().get_comparable(dep_db.clone(), lid.clone(), value));
-//         let joined = self.latgraph.clone().join(lid.clone(), current_cmp?, value_cmp?)?;
-//         if joined != current {
-//             self.maxes.lock().unwrap().insert(lid, joined);
-//         }
-//         Ok(())
-//     }
-// }
+pub struct MemoryLatticeDB<L: LatGraph> {
+    latgraph: Arc<L>,
+    maxes: Mutex<BTreeMap<L::LID, L::Value>>,
+}
+
+impl<L: LatGraph> MemoryLatticeDB<L> {
+    pub fn new(latgraph: Arc<L>) -> Self {
+        MemoryLatticeDB {
+            latgraph,
+            maxes: Mutex::new(BTreeMap::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MemoryLatticeDB<L> {
+    fn get_latgraph(&self) -> Arc<dyn LatGraph<LID = L::LID, Value = L::Value, Cmp = L::Cmp>> {
+        self.latgraph.clone()
+    }
+    async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Result<L::Value, String> {
+        match self.maxes.lock().unwrap().get(&lid) {
+            None => self.latgraph.default(lid),
+            Some(x) => Ok(x.clone())
+        }
+    }
+}
+
+#[async_trait]
+impl<L: LatGraph + 'static> LatticeWriteDB<L::LID, L::Value, L::Cmp> for MemoryLatticeDB<L> {
+    async fn put_lattice_value(self: Arc<Self>, lid: L::LID, value: L::Value) -> Result<(), String> {
+        // maybe we do the following:
+        // get deps for value, current
+        // if join changed from current:
+        //   update deps of value
+        //   put default in things depending on current deps
+        //   set pins to: pins of value + pins of dependents (pin can be bigint!)
+        //   maybe instead of bigint, pin is a set of pinned lids?
+        //   actually...delay recomputing pins to a pin step that deletes unpinned data
+        //   wait! is it more efficient to interleave merge steps with dep-update steps???
+        let default = self.latgraph.default(lid.clone())?;
+        let current = self.clone().get_lattice_max(lid.clone()).await.unwrap_or(default.clone());
+        let dep_db = Arc::new(DependencyLatticeDB::new(self.clone()));
+        let (current_cmp, value_cmp) = join!(
+            self.latgraph.clone().get_comparable(dep_db.clone(), lid.clone(), current.clone()),
+            self.latgraph.clone().get_comparable(dep_db.clone(), lid.clone(), value));
+        let joined = self.latgraph.clone().join(lid.clone(), current_cmp?, value_cmp?)?;
+        if joined != current {
+            self.maxes.lock().unwrap().insert(lid, joined);
+        }
+        Ok(())
+    }
+}
