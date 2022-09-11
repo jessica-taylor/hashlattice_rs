@@ -77,6 +77,7 @@ pub struct MemoryLatticeDB<L: LatGraph> {
     maxes: Mutex<BTreeMap<L::LID, L::Value>>,
     dependencies: Mutex<BTreeMap<L::LID, BTreeSet<L::LID>>>,
     dependents: Mutex<BTreeMap<L::LID, BTreeSet<L::LID>>>,
+    dirty: Mutex<BTreeSet<L::LID>>,
 
 }
 
@@ -86,7 +87,8 @@ impl<L: LatGraph + 'static> MemoryLatticeDB<L> {
             latgraph,
             maxes: Mutex::new(BTreeMap::new()),
             dependencies: Mutex::new(BTreeMap::new()),
-            dependents: Mutex::new(BTreeMap::new())
+            dependents: Mutex::new(BTreeMap::new()),
+            dirty: Mutex::new(BTreeSet::new())
         }
     }
     async fn update_dependencies(self: Arc<Self>, lid: L::LID) -> Result<(), String> {
@@ -146,6 +148,7 @@ impl<L: LatGraph + 'static> LatticeWriteDB<L::LID, L::Value, L::Cmp> for MemoryL
             self.latgraph.clone().get_comparable(self.clone(), lid.clone(), value));
         let joined = self.latgraph.clone().join(lid.clone(), current_cmp?, value_cmp?)?;
         if joined != current {
+            self.dirty.lock().unwrap().insert(lid.clone());
             self.maxes.lock().unwrap().insert(lid, joined);
         }
         Ok(())
