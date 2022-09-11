@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use async_mutex::Mutex as AsyncMutex;
 use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
@@ -75,6 +75,9 @@ impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MergeLat
 pub struct MemoryLatticeDB<L: LatGraph> {
     latgraph: Arc<L>,
     maxes: Mutex<BTreeMap<L::LID, L::Value>>,
+    dependencies: Mutex<BTreeMap<L::LID, BTreeSet<L::LID>>>,
+    dependents: Mutex<BTreeMap<L::LID, BTreeSet<L::LID>>>,
+
 }
 
 impl<L: LatGraph + 'static> MemoryLatticeDB<L> {
@@ -82,13 +85,32 @@ impl<L: LatGraph + 'static> MemoryLatticeDB<L> {
         MemoryLatticeDB {
             latgraph,
             maxes: Mutex::new(BTreeMap::new()),
+            dependencies: Mutex::new(BTreeMap::new()),
+            dependents: Mutex::new(BTreeMap::new())
         }
     }
-    async fn get_dependencies(self: Arc<Self>, lid: L::LID) -> Result<Vec<L::LID>, String> {
+    async fn update_dependencies(self: Arc<Self>, lid: L::LID) -> Result<(), String> {
+        let empty_set = BTreeSet::new();
+        let old_deps = self.dependencies.lock().unwrap().get(&lid).clone().unwrap_or(&empty_set).clone();
         let dep_db = Arc::new(DependencyLatticeDB::new(self.clone()));
         let val = self.clone().get_lattice_max(lid.clone()).await?;
-        let _cmp = self.latgraph.clone().get_comparable(dep_db.clone(), lid, val).await?;
-        Ok(dep_db.deps().keys().map(|k| k.clone()).collect())
+        let _cmp = self.latgraph.clone().get_comparable(dep_db.clone(), lid.clone(), val).await?;
+        let new_deps: BTreeSet<L::LID> = dep_db.deps().keys().map(|k| k.clone()).collect();
+        self.dependencies.lock().unwrap().insert(lid.clone(), new_deps.clone());
+        let mut dependents = self.dependents.lock().unwrap();
+        for old_dep in &old_deps {
+            if !new_deps.contains(old_dep) {
+                if let Some(ds) = dependents.get_mut(old_dep) {
+                    ds.remove(&lid);
+                }
+            }
+        }
+        for new_dep in new_deps {
+            if !old_deps.contains(&new_dep) {
+                dependents.entry(new_dep).or_insert(BTreeSet::new()).insert(lid.clone());
+            }
+        }
+        Ok(())
     }
 }
 
