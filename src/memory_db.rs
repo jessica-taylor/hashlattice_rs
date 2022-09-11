@@ -3,7 +3,8 @@ use async_mutex::Mutex as AsyncMutex;
 use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use async_recursion::async_recursion;
-use futures::{join, future::join_all};
+use futures::{join, future::{join_all, try_join_all}};
+use std::mem::swap;
 
 use super::lattice::{LatGraph, LatticeReadDB, LatticeWriteDB, DependencyLatticeDB, MapLatticeReadDB};
 
@@ -114,6 +115,29 @@ impl<L: LatGraph + 'static> MemoryLatticeDB<L> {
         }
         Ok(())
     }
+    async fn update_dirty(self: Arc<Self>) -> Result<(), String> {
+        let dirty = {
+            let mut d = self.dirty.lock().unwrap();
+            let mut res = BTreeSet::new();
+            swap(&mut res, &mut d);
+            res
+        };
+        let self2 = self.clone();
+        try_join_all(dirty.iter().map(|lid| self2.clone().update_dependencies(lid.clone()))).await?;
+        // TODO topological sort dirty
+        let dirty_topsort: Vec<L::LID> = dirty.into_iter().collect();
+        let empty_set = BTreeSet::new();
+        for lid in dirty_topsort {
+            if self.clone().put_lattice_value(lid.clone(), self.latgraph.default(lid.clone())?).await? {
+                let lid_deps = self.dependents.lock().unwrap().get(&lid).unwrap_or(&empty_set).clone();
+                let mut dirty = self.dirty.lock().unwrap();
+                for d in lid_deps {
+                    dirty.insert(d);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -131,16 +155,7 @@ impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MemoryLa
 
 #[async_trait]
 impl<L: LatGraph + 'static> LatticeWriteDB<L::LID, L::Value, L::Cmp> for MemoryLatticeDB<L> {
-    async fn put_lattice_value(self: Arc<Self>, lid: L::LID, value: L::Value) -> Result<(), String> {
-        // maybe we do the following:
-        // get deps for value, current
-        // if join changed from current:
-        //   update deps of value
-        //   put default in things depending on current deps
-        //   set pins to: pins of value + pins of dependents (pin can be bigint!)
-        //   maybe instead of bigint, pin is a set of pinned lids?
-        //   actually...delay recomputing pins to a pin step that deletes unpinned data
-        //   wait! is it more efficient to interleave merge steps with dep-update steps???
+    async fn put_lattice_value(self: Arc<Self>, lid: L::LID, value: L::Value) -> Result<bool, String> {
         let default = self.latgraph.default(lid.clone())?;
         let current = self.clone().get_lattice_max(lid.clone()).await.unwrap_or(default.clone());
         let (current_cmp, value_cmp) = join!(
@@ -150,7 +165,9 @@ impl<L: LatGraph + 'static> LatticeWriteDB<L::LID, L::Value, L::Cmp> for MemoryL
         if joined != current {
             self.dirty.lock().unwrap().insert(lid.clone());
             self.maxes.lock().unwrap().insert(lid, joined);
+            Ok(true)
+        } else {
+            Ok(false)
         }
-        Ok(())
     }
 }

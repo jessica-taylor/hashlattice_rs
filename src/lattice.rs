@@ -31,7 +31,8 @@ pub trait LatticeReadDB<LID, Value, Cmp> : Send + Sync {
 #[async_trait]
 pub trait LatticeWriteDB<LID, Value, Cmp> : LatticeReadDB<LID, Value, Cmp> {
 
-    async fn put_lattice_value(self: Arc<Self>, lid: LID, value: Value) -> Result<(), String>;
+    // bool is whether it updated
+    async fn put_lattice_value(self: Arc<Self>, lid: LID, value: Value) -> Result<bool, String>;
 }
 
 pub struct MapLatticeReadDB<L: LatGraph> {
