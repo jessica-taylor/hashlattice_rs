@@ -82,6 +82,7 @@ impl<L: LatGraph + 'static> LatticeWriteDB<L::LID, L::Value, L::Cmp> for Lattice
             for dep_on_val in db.get_dependents(&lid)? {
                 db.set_dirty(&dep_on_val)?;
             }
+            db.set_undirty(&lid)?;
             Ok(true)
         } else {
             Ok(false)
