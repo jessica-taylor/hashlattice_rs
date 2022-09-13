@@ -67,7 +67,6 @@ impl<L: LatGraph + 'static> LatticeWriteDB<L::LID, L::Value, L::Cmp> for Lattice
             };
             let old_deps: BTreeSet<L::LID> = old_dep_db.deps().keys().cloned().collect();
             let mut db = self.raw_db.lock().unwrap();
-            db.set_dirty(&lid)?;
             db.set_lattice_max(&lid, if joined == default {None} else {Some(joined)})?;
             db.set_dependencies(&lid, joined_deps.clone())?;
             for dep in &joined_deps {
@@ -79,6 +78,9 @@ impl<L: LatGraph + 'static> LatticeWriteDB<L::LID, L::Value, L::Cmp> for Lattice
                 if !joined_deps.contains(dep) {
                     db.remove_dependent(dep, &lid)?;
                 }
+            }
+            for dep_on_val in db.get_dependents(&lid)? {
+                db.set_dirty(&dep_on_val)?;
             }
             Ok(true)
         } else {
