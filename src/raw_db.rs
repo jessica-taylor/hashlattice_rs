@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use futures::join;
 use async_trait::async_trait;
 
-use super::lattice::{LatGraph, LatticeReadDB, LatticeWriteDB};
+use super::lattice::{LatGraph, LatticeReadDB, LatticeWriteDB, DependencyLatticeDB};
 
 pub trait LatticeRawWriteDB<LID, Value> {
     fn get_lattice_max(&self, lid: &LID) -> Result<Option<Value>, String>;
@@ -20,6 +20,8 @@ pub trait LatticeRawWriteDB<LID, Value> {
 
     fn get_dependents(&self, lid: &LID) -> Result<BTreeSet<LID>, String>;
     fn set_dependents(&mut self, lid: &LID) -> Result<BTreeSet<LID>, String>;
+    fn remove_dependent(&mut self, lid: &LID, dep: &LID) -> Result<(), String>;
+    fn add_dependent(&mut self, lid: &LID, dep: &LID) -> Result<(), String>;
 }
 
 pub struct LatticeWrapperWriteDB<L: LatGraph> {
@@ -52,14 +54,32 @@ impl<L: LatGraph + 'static> LatticeWriteDB<L::LID, L::Value, L::Cmp> for Lattice
         let default = self.latgraph.default(lid.clone())?;
         let current = self.clone().get_lattice_max(lid.clone()).await?;
         // TODO: should we do a lock or something?
+        let old_dep_db = Arc::new(DependencyLatticeDB::new(self.clone()));
         let (current_cmp, value_cmp) = join!(
-            self.latgraph.clone().get_comparable(self.clone(), lid.clone(), current.clone()),
+            self.latgraph.clone().get_comparable(old_dep_db.clone(), lid.clone(), current.clone()),
             self.latgraph.clone().get_comparable(self.clone(), lid.clone(), value));
         let joined = self.latgraph.clone().join(lid.clone(), current_cmp?, value_cmp?)?;
         if joined != current {
+            let joined_deps: BTreeSet<L::LID> = {
+                let dep_db = Arc::new(DependencyLatticeDB::new(self.clone()));
+                self.latgraph.clone().get_comparable(dep_db.clone(), lid.clone(), joined.clone()).await?;
+                dep_db.deps().keys().cloned().collect()
+            };
+            let old_deps: BTreeSet<L::LID> = old_dep_db.deps().keys().cloned().collect();
             let mut db = self.raw_db.lock().unwrap();
             db.set_dirty(&lid)?;
             db.set_lattice_max(&lid, if joined == default {None} else {Some(joined)})?;
+            db.set_dependencies(&lid, joined_deps.clone())?;
+            for dep in &joined_deps {
+                if !old_deps.contains(dep) {
+                    db.add_dependent(dep, &lid)?;
+                }
+            }
+            for dep in &old_deps {
+                if !joined_deps.contains(dep) {
+                    db.remove_dependent(dep, &lid)?;
+                }
+            }
             Ok(true)
         } else {
             Ok(false)

@@ -4,19 +4,26 @@ use std::marker::PhantomData;
 use serde::{Serialize, de::DeserializeOwned};
 use async_trait::async_trait;
 
+/// A graph where each item is a semilattice, which may depend on other lattice max values.
 #[async_trait]
 pub trait LatGraph : Send + Sync {
 
+    /// IDs identifying lattice value keys.
     type LID : Eq + Ord + Clone + Serialize + DeserializeOwned + Send + Sync;
 
+    /// The values themselves.
     type Value : Eq + Clone + Serialize + DeserializeOwned + Send + Sync;
 
+    /// A comparable version of a value.
     type Cmp : Clone + Send + Sync;
 
+    /// The default element of the lattice.
     fn default(&self, lid: Self::LID) -> Result<Self::Value, String>;
 
+    /// Convert a lattice value to a comparable value, reading max values from a database.
     async fn get_comparable(self: Arc<Self>, db: Arc<dyn LatticeReadDB<Self::LID, Self::Value, Self::Cmp>>, lid: Self::LID, value: Self::Value) -> Result<Self::Cmp, String>;
 
+    /// Joins two lattice values using their compatables.
     fn join(&self, lid: Self::LID, acmp: Self::Cmp, bcmp: Self::Cmp) -> Result<Self::Value, String>;
 }
 
