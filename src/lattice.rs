@@ -1,8 +1,6 @@
 use std::collections::{BTreeSet, BTreeMap};
-use std::sync::{Arc, Mutex};
-use std::marker::PhantomData;
+
 use serde::{Serialize, de::DeserializeOwned};
-use async_trait::async_trait;
 
 /// A graph where each item is a semilattice, which may depend on other lattice max values.
 pub trait LatGraph : Send + Sync {
@@ -23,51 +21,17 @@ pub trait LatGraph : Send + Sync {
     fn default(&self, key: &Self::K) -> Result<Self::V, String>;
 }
 
-#[async_trait]
-pub trait LatticeSpec<K, V> : Send + Sync {
 
-    fn get_latgraph(&self) -> Arc<dyn LatGraph<K = K, V = V>>;
 
-    async fn get_lattice_max(self: Arc<Self>, key: K) -> Result<V, String>;
-}
+pub struct SerializeLatGraph<'a, L: LatGraph>(&'a L);
 
-// pub struct MapLatticeReadDB<L: LatGraph> {
-//     latgraph: Arc<L>,
-//     values: Arc<BTreeMap<L::LID, L::Value>>,
-// }
-// 
-// impl<L: LatGraph> MapLatticeReadDB<L> {
-//     pub fn new(latgraph: Arc<L>, values: BTreeMap<L::LID, L::Value>) -> Self {
-//         Self {
-//             latgraph,
-//             values: Arc::new(values)
-//         }
-//     }
-// }
-// 
-// #[async_trait]
-// impl<L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for MapLatticeReadDB<L> {
-//     fn get_latgraph(&self) -> Arc<dyn LatGraph<LID = L::LID, Value = L::Value, Cmp = L::Cmp>> {
-//         self.latgraph.clone()
-//     }
-// 
-//     async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Result<L::Value, String> {
-//         match self.values.get(&lid) {
-//             Some(v) => Ok(v.clone()),
-//             None => self.latgraph.default(lid)
-//         }
-//     }
-// }
-
-pub struct SerializeLatGraph<L: LatGraph>(Arc<L>);
-
-impl<L: LatGraph> SerializeLatGraph<L> {
-    pub fn new(l: Arc<L>) -> Self {
+impl<'a, L: LatGraph> SerializeLatGraph<'a, L> {
+    pub fn new(l: &'a L) -> Self {
         SerializeLatGraph(l)
     }
 }
 
-impl<L: LatGraph + 'static> LatGraph for SerializeLatGraph<L> {
+impl<'a, L: LatGraph + 'static> LatGraph for SerializeLatGraph<'a, L> {
 
     type K = Vec<u8>;
 
@@ -104,36 +68,19 @@ impl<L: LatGraph + 'static> LatGraph for SerializeLatGraph<L> {
     }
 }
 
-// struct SerializeLatticeReadDB<L: LatGraph> {
-//     db: Arc<dyn LatticeReadDB<Vec<u8>, Vec<u8>, L::Cmp>>,
-//     latgraph: Arc<dyn LatGraph<LID = L::LID, Value = L::Value, Cmp = L::Cmp>>,
-// }
-// 
-// #[async_trait]
-// impl <L: LatGraph + 'static> LatticeReadDB<L::LID, L::Value, L::Cmp> for SerializeLatticeReadDB<L> {
-//     fn get_latgraph(&self) -> Arc<dyn LatGraph<LID = L::LID, Value = L::Value, Cmp = L::Cmp>> {
-//         self.latgraph.clone()
-//     }
-//     async fn get_lattice_max(self: Arc<Self>, lid: L::LID) -> Result<L::Value, String> {
-//         let ser_lid = rmp_serde::to_vec_named(&lid).unwrap();
-//         let max = self.db.clone().get_lattice_max(ser_lid).await?;
-//         rmp_serde::from_slice(&max).map_err(|e| e.to_string())
-//     }
-// }
-
 pub trait IsEnum {
     fn get_branch(&self) -> usize;
 }
 
-pub struct EnumLatGraph<L: LatGraph>(Vec<Arc<L>>);
+pub struct EnumLatGraph<'a, L: LatGraph>(Vec<&'a L>);
 
-impl<L: LatGraph> EnumLatGraph<L> {
-    pub fn new(l: Vec<Arc<L>>) -> Self {
+impl<'a, L: LatGraph> EnumLatGraph<'a, L> {
+    pub fn new(l: Vec<&'a L>) -> Self {
         EnumLatGraph(l)
     }
 }
 
-impl<L: LatGraph + 'static> LatGraph for EnumLatGraph<L>
+impl<'a, L: LatGraph + 'static> LatGraph for EnumLatGraph<'a, L>
 where L::K: IsEnum, L::V: IsEnum {
     
     type K = L::K;
@@ -172,5 +119,4 @@ where L::K: IsEnum, L::V: IsEnum {
         }
         self.0[branch].default(key)
     }
-
 }

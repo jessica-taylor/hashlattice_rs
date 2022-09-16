@@ -1,6 +1,5 @@
 mod lattice;
-// mod memory_db;
-// mod raw_db;
+mod mapping;
 
 fn main() {
     println!("Hello, world!");
