@@ -13,6 +13,23 @@ pub trait LatMapping<L: LatGraph> : Send + Sync {
     async fn get_lattice_max(self: Arc<Self>, key: L::K) -> Result<L::V, String>;
 }
 
+impl<L: LatGraph> dyn LatMapping<L> {
+    async fn dependencies(self: Arc<Self>, key: L::K) -> Result<BTreeSet<L::K>, String> {
+        let value = self.clone().get_lattice_max(key.clone()).await?;
+        self.get_latgraph().dependencies(&key, &value)
+    }
+
+    async fn join(self: Arc<Self>, key: L::K, v1: L::V, v2: L::V) -> Result<L::V, String> {
+        let mut deps = BTreeMap::new();
+        let deps1 = self.get_latgraph().dependencies(&key, &v1)?;
+        let deps2 = self.get_latgraph().dependencies(&key, &v2)?;
+        for dep in deps1.union(&deps2) {
+            deps.insert(dep.clone(), self.clone().get_lattice_max(dep.clone()).await?);
+        }
+        self.get_latgraph().join(&key, &v1, &v2, &deps)
+    }
+}
+
 struct JoinMapping<L: LatGraph, M1: LatMapping<L>, M2: LatMapping<L>> {
     m1: Arc<M1>,
     m2: Arc<M2>,
