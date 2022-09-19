@@ -1,0 +1,57 @@
+
+\documentclass{article}
+
+\usepackage{amsmath}
+\usepackage{amssymb}
+
+\title{Semilattice Graphs for Distributed Databases}
+\author{Jessica Taylor}
+\date{\today}
+
+\begin{document}
+    \maketitle
+    
+    \section{Introduction}
+        A \emph{semilattice} is a set $L$ with a binary operation $\vee$ (``join'') that is commutative ($x \vee y = y \vee x$), associative ($(x \vee y) \vee z = x \vee (y \vee z)$), and idempotent ($x \vee x = x$).
+
+        In databases, lattices are useful for defining a notion of a most updated value. For example, with $L$ as a set of sets of messages and $\vee = \cup$, the lattice represents sets of messages that are updated to include more messages as they come in.
+
+
+    \section{Semilattice Graphs}
+
+        A common problem in networked computing is dependency managament. A software package may depend on a set of other packages, each of which depends on another set of packages. We consider extending semilattices to semilattice graphs to handle dependency management.
+        
+        A \emph{semilattice graph} consists of:
+
+        \begin{itemize}
+            \item A set of keys $K$.
+            \item A set of values $V$.
+            \item A dependency function $d : K \times V \rightarrow 2^K$ that maps each key to a set of keys, its dependencies.
+            \item A join function $j : (\Sigma (k: K, x : V, y : V), d(k, x) \cup d(k, y) \rightarrow V) \rightarrow V$ that joins two values given their dependencies. (The sigma set $\Sigma (a: A), B(a)$ denotes a set of pairs $(a, b)$ where $a \in A$ and $b \in B(a)$.)
+        \end{itemize}
+
+        And satisfies the following properties:
+
+        \begin{itemize}
+            \item $d$ must be well-founded; that is, there are no infinite sequences $k_1, k_2, \ldots \in K$ and $v_1, v_2, \ldots \in V$ such that $k_{i+1} \in d(k_i, v_i)$ for $i = 1, \ldots$
+            \item $j$ must be a valid join function; for any $k : K$, $g: K \rightarrow V$, defining $x \vee_{k,g} y := j(k, x, y, g_{d(k, x) \cup d(k, y)})$, then $(V, \vee_{k,g})$ must be a semilattice.
+            \item $j$ must not grow dependencies; that is, for any $k : K$, $g: K \rightarrow V$, $x, y \in V$, we must have $d(k, x \vee_{k, g} y) \subseteq d(k, x) \cup d(k, y)$.
+        \end{itemize}
+
+        A semilattice graph \emph{has defaults} if there is a function $z : K \rightarrow V$ such that $d(k, z(k)) = \{\}$ for each $k \in K$.
+
+    \section{Joins on semilattice graphs}
+
+        It is now possible to define a semilattice over a semilattice graph. This lattice's items are functions $K \rightarrow V$ (called \emph{mappings}) and the join operation is defined as follows:
+
+        $$ (g_1 \vee g_2)(k) := g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k) $$
+
+        where the recursion is well-founded due to $d$ not containing any cycles.
+
+        Computationally, a mapping may be represented as a set of $K \times V$ pairs (perhaps in a database), with the remaining keys being mapped to their default values; such a mapping is called \emph{finite}. The join of two finite mappings is finite, since the join of two identical default values is itself a default value (due to $\vee_{k, g}$ being idempotent). Alternatively, an infinite mapping may be represented as a function.
+
+        Merging two mappings can be done recursively. Given mappings $g_1$ and $g_2$ and a key $k$, we compute the values $g_1(k), g_2(k)$ and their dependency sets $d(k, g_1(k)), d(k, g_2(k))$. We recursively merge $g_1$ and $g_2$ on each key in either dependency set, caching intermediate values to avoid repetated recursive calls. Finally, we compute the join and cache it in the database.
+
+        We may consider merging a mapping with a singleton mapping, which specifies the value of a single key and otherwise contains only default values. In this case, merging will change this value and all its direct or indirect dependencies. Merging with a singleton is similar to a ``database insert'', updating the value of a given key.
+
+\end{document}
