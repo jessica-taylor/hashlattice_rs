@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 
-use super::lattice::LatGraph;
+use super::lattice::{LatGraph, AutofillDatabase};
 
 #[async_trait]
 pub trait LatMapping<L: LatGraph> : Send + Sync {
@@ -13,7 +13,18 @@ pub trait LatMapping<L: LatGraph> : Send + Sync {
     async fn get_lattice_max(self: Arc<Self>, key: L::K) -> Result<L::V, String>;
 }
 
-impl<L: LatGraph> dyn LatMapping<L> {
+#[async_trait]
+pub trait LatMappingExt<L: LatGraph> : LatMapping<L> {
+
+    async fn dependencies(self: Arc<Self>, key: L::K) -> Result<BTreeSet<L::K>, String>;
+
+    async fn join(self: Arc<Self>, key: L::K, v1: L::V, v2: L::V) -> Result<L::V, String>;
+
+    async fn autofill(self: Arc<Self>, key: L::K) -> Result<L::V, String>;
+}
+
+#[async_trait]
+impl<L: LatGraph + 'static, M: LatMapping<L> + 'static> LatMappingExt<L> for M {
     async fn dependencies(self: Arc<Self>, key: L::K) -> Result<BTreeSet<L::K>, String> {
         let value = self.clone().get_lattice_max(key.clone()).await?;
         self.get_latgraph().dependencies(&key, &value)
@@ -27,6 +38,41 @@ impl<L: LatGraph> dyn LatMapping<L> {
             deps.insert(dep.clone(), self.clone().get_lattice_max(dep.clone()).await?);
         }
         self.get_latgraph().join(&key, &v1, &v2, &deps)
+    }
+
+    async fn autofill(self: Arc<Self>, key: L::K) -> Result<L::V, String> {
+        let db = Arc::new(MappingAutofillDatabase::new(key.clone(), self.clone()));
+        self.get_latgraph().autofill(&key, db).await
+    }
+}
+
+struct MappingAutofillDatabase<L: LatGraph, M: LatMapping<L> + ?Sized> {
+    key: L::K,
+    mapping: Arc<M>
+}
+
+impl <L: LatGraph, M: LatMapping<L>> MappingAutofillDatabase<L, M> {
+    fn new(key: L::K, mapping: Arc<M>) -> Self {
+        MappingAutofillDatabase {key, mapping}
+    }
+}
+
+#[async_trait]
+impl <L: LatGraph + 'static, M: LatMapping<L> + 'static> AutofillDatabase<L::K, L::V> for MappingAutofillDatabase<L, M> {
+    async fn get_value(self: Arc<Self>, keys: Vec<L::K>) -> Result<L::V, String> {
+        if keys.len() == 0 {
+            return Err("No keys provided".to_string());
+        }
+        if keys[0] != self.key {
+            return Err("Key mismatch".to_string());
+        }
+        for i in 0..keys.len() - 1 {
+            let deps = self.mapping.clone().dependencies(keys[i].clone()).await?;
+            if !deps.contains(&keys[i+1]) {
+                return Err("Key mismatch".to_string());
+            }
+        }
+        self.mapping.clone().get_lattice_max(keys[keys.len() - 1].clone()).await
     }
 }
 
