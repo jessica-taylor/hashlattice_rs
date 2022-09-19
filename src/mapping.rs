@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 
-use super::lattice::{LatGraph, AutofillDatabase};
+use super::lattice::LatGraph;
 
 #[async_trait]
 pub trait LatMapping<L: LatGraph> : Send + Sync {
@@ -27,13 +27,13 @@ pub trait LatMappingExt<L: LatGraph> : LatMapping<L> {
 impl<L: LatGraph + 'static, M: LatMapping<L> + 'static> LatMappingExt<L> for M {
     async fn dependencies(self: Arc<Self>, key: L::K) -> Result<BTreeSet<L::K>, String> {
         let value = self.clone().get_lattice_max(key.clone()).await?;
-        self.get_latgraph().dependencies(&key, &value)
+        self.get_latgraph().dependencies(&key, Some(&value))
     }
 
     async fn join(self: Arc<Self>, key: L::K, v1: L::V, v2: L::V) -> Result<L::V, String> {
         let mut deps = BTreeMap::new();
-        let deps1 = self.get_latgraph().dependencies(&key, &v1)?;
-        let deps2 = self.get_latgraph().dependencies(&key, &v2)?;
+        let deps1 = self.get_latgraph().dependencies(&key, Some(&v1))?;
+        let deps2 = self.get_latgraph().dependencies(&key, Some(&v2))?;
         for dep in deps1.union(&deps2) {
             deps.insert(dep.clone(), self.clone().get_lattice_max(dep.clone()).await?);
         }
@@ -41,38 +41,11 @@ impl<L: LatGraph + 'static, M: LatMapping<L> + 'static> LatMappingExt<L> for M {
     }
 
     async fn autofill(self: Arc<Self>, key: L::K) -> Result<L::V, String> {
-        let db = Arc::new(MappingAutofillDatabase::new(key.clone(), self.clone()));
-        self.get_latgraph().autofill(&key, db).await
-    }
-}
-
-struct MappingAutofillDatabase<L: LatGraph, M: LatMapping<L> + ?Sized> {
-    key: L::K,
-    mapping: Arc<M>
-}
-
-impl <L: LatGraph, M: LatMapping<L>> MappingAutofillDatabase<L, M> {
-    fn new(key: L::K, mapping: Arc<M>) -> Self {
-        MappingAutofillDatabase {key, mapping}
-    }
-}
-
-#[async_trait]
-impl <L: LatGraph + 'static, M: LatMapping<L> + 'static> AutofillDatabase<L::K, L::V> for MappingAutofillDatabase<L, M> {
-    async fn get_value(self: Arc<Self>, keys: Vec<L::K>) -> Result<L::V, String> {
-        if keys.len() == 0 {
-            return Err("No keys provided".to_string());
+        let mut deps = BTreeMap::new();
+        for dep in self.get_latgraph().dependencies(&key, None)? {
+            deps.insert(dep.clone(), self.clone().get_lattice_max(dep.clone()).await?);
         }
-        if keys[0] != self.key {
-            return Err("Key mismatch".to_string());
-        }
-        for i in 0..keys.len() - 1 {
-            let deps = self.mapping.clone().dependencies(keys[i].clone()).await?;
-            if !deps.contains(&keys[i+1]) {
-                return Err("Key mismatch".to_string());
-            }
-        }
-        self.mapping.clone().get_lattice_max(keys[keys.len() - 1].clone()).await
+        self.get_latgraph().autofill(&key, &deps)
     }
 }
 
@@ -103,8 +76,8 @@ impl<L: LatGraph + 'static, M1: LatMapping<L>, M2: LatMapping<L>> LatMapping<L> 
         }
         let v1 = self.m1.clone().get_lattice_max(key.clone()).await?;
         let v2 = self.m2.clone().get_lattice_max(key.clone()).await?;
-        let deps1 = self.get_latgraph().dependencies(&key, &v1)?;
-        let deps2 = self.get_latgraph().dependencies(&key, &v2)?;
+        let deps1 = self.get_latgraph().dependencies(&key, Some(&v1))?;
+        let deps2 = self.get_latgraph().dependencies(&key, Some(&v2))?;
         let mut depvals = BTreeMap::new();
         for dep in deps1.union(&deps2) {
             depvals.insert(dep.clone(), self.clone().get_lattice_max(dep.clone()).await?);
