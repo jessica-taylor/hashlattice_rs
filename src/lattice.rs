@@ -1,8 +1,13 @@
+use std::sync::Arc;
 use std::collections::{BTreeSet, BTreeMap};
+use std::marker::PhantomData;
+
+use async_trait::async_trait;
 
 use serde::{Serialize, de::DeserializeOwned};
 
 /// A graph where each item is a semilattice, which may depend on other lattice max values.
+#[async_trait]
 pub trait LatGraph : Send + Sync {
 
     /// Keys identifying lattice value keys.
@@ -18,7 +23,12 @@ pub trait LatGraph : Send + Sync {
     fn join(&self, key: &Self::K, v1: &Self::V, v2: &Self::V, deps: &BTreeMap<Self::K, Self::V>) -> Result<Self::V, String>;
 
     /// The default element of the lattice.
-    fn autofill(&self, key: &Self::K, vals: &mut dyn FnMut(&Vec<Self::K>) -> Result<Self::V, String>) -> Result<Self::V, String>;
+    async fn autofill(&self, key: &Self::K, vals: Arc<dyn AutofillDatabase<Self::K, Self::V>>) -> Result<Self::V, String>;
+}
+
+#[async_trait]
+pub trait AutofillDatabase<K, V> : Send + Sync {
+    async fn get_value(self: Arc<Self>, keys: Vec<K>) -> Result<V, String>;
 }
 
 
@@ -31,6 +41,7 @@ impl<'a, L: LatGraph> SerializeLatGraph<'a, L> {
     }
 }
 
+#[async_trait]
 impl<'a, L: LatGraph + 'static> LatGraph for SerializeLatGraph<'a, L> {
 
     type K = Vec<u8>;
@@ -61,17 +72,33 @@ impl<'a, L: LatGraph + 'static> LatGraph for SerializeLatGraph<'a, L> {
         rmp_serde::to_vec_named(&v).map_err(|e| format!("failed to serialize value: {}", e))
     }
 
-    fn autofill(&self, key: &Self::K, vs: &mut dyn FnMut(&Vec<Self::K>) -> Result<Self::V, String>) -> Result<Self::V, String> {
+    async fn autofill(&self, key: &Self::K, vals: Arc<dyn AutofillDatabase<Self::K, Self::V>>) -> Result<Self::V, String> {
         let key = rmp_serde::from_slice(key).map_err(|e| format!("failed to deserialize key: {}", e))?;
-        let v = self.0.autofill(&key, &mut move |ks| {
-            let mut ks2 = Vec::new();
-            for k in ks {
-                ks2.push(rmp_serde::to_vec(&k).map_err(|e| format!("failed to serialize key: {}", e))?);
-            }
-            let res = vs(&ks2)?;
-            rmp_serde::from_slice(&res).map_err(|e| format!("failed to deserialize value: {}", e))
-        })?;
+        let v = self.0.autofill(&key, Arc::new(SerializeAutofillDatabase::<L>::new(vals))).await?;
         rmp_serde::to_vec_named(&v).map_err(|e| format!("failed to serialize value: {}", e))
+    }
+}
+
+struct SerializeAutofillDatabase<L: LatGraph> {
+    db: Arc<dyn AutofillDatabase<Vec<u8>, Vec<u8>>>,
+    _phantom: std::marker::PhantomData<L>,
+}
+
+impl<L: LatGraph> SerializeAutofillDatabase<L> {
+    fn new(db: Arc<dyn AutofillDatabase<Vec<u8>, Vec<u8>>>) -> Self {
+        SerializeAutofillDatabase {db, _phantom: PhantomData}
+    }
+}
+
+#[async_trait]
+impl<L: LatGraph> AutofillDatabase<L::K, L::V> for SerializeAutofillDatabase<L> {
+    async fn get_value(self: Arc<Self>, keys: Vec<L::K>) -> Result<L::V, String> {
+        let mut ks = Vec::new();
+        for k in keys {
+            ks.push(rmp_serde::to_vec(&k).map_err(|e| format!("failed to serialize key: {}", e))?);
+        }
+        let res = self.db.clone().get_value(ks).await?;
+        rmp_serde::from_slice(&res).map_err(|e| format!("failed to deserialize value: {}", e))
     }
 }
 
@@ -87,6 +114,7 @@ impl<'a, L: LatGraph> EnumLatGraph<'a, L> {
     }
 }
 
+#[async_trait]
 impl<'a, L: LatGraph + 'static> LatGraph for EnumLatGraph<'a, L>
 where L::K: IsEnum, L::V: IsEnum {
     
@@ -119,11 +147,11 @@ where L::K: IsEnum, L::V: IsEnum {
         self.0[branch].join(key, v1, v2, deps)
     }
 
-    fn autofill(&self, key: &Self::K, vals: &mut dyn FnMut(&Vec<Self::K>) -> Result<Self::V, String>) -> Result<Self::V, String> {
+    async fn autofill(&self, key: &Self::K, vals: Arc<dyn AutofillDatabase<Self::K, Self::V>>) -> Result<Self::V, String> {
         let branch = key.get_branch();
         if branch >= self.0.len() {
             return Err(format!("branch {} out of range", branch));
         }
-        self.0[branch].autofill(key, vals)
+        self.0[branch].autofill(key, vals).await
     }
 }
