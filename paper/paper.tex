@@ -51,18 +51,21 @@
         Mappings may be infinite in general, and even finite ones contain a large number of keys. It is therefore computationally infeasible to store a mapping as a set of $K \times V$ pairs. Accordingly, we define \emph{autofills} to fill in lattice values automatically from a set of other values.
 
 
-        Define $d^*(k, g) := \{k\} \cup \bigcup_{k' \in d(k, g(k))} d^*(k', g)$, the transitive closure of $d$, where $g$ is a mapping. The recursion is well-founded (and $d^*(k, g)$ is finite) because $d$ is well-founded.
+        % Define $d^*(k, g) := \{k\} \cup \bigcup_{k' \in d(k, g(k))} d^*(k', g)$, the transitive closure of $d$, where $g$ is a mapping. The recursion is well-founded (and $d^*(k, g)$ is finite) because $d$ is well-founded.
 
-        Note that $d^*(k, g_1 \vee g_2) \subseteq d^*(k, g_1) \cup d^*(k, g_2)$.
+        % Note that $d^*(k, g_1 \vee g_2) \subseteq d^*(k, g_1) \cup d^*(k, g_2)$.
 
-        An \emph{autofill} for a semilattice graph is a function $a : \forall (k:K, g: V \rightarrow K), V$ that satisfies:
+        An \emph{autofill} for a semilattice graph consists of a dependency function $\hat{d}: K \rightarrow 2^V$ and an autofill function $a : \forall (k:K), \hat{d}(k) \rightarrow V$ that satisfy:
 
         \begin{itemize}
           \item
-            $a(k, g_1) = a(k, g_2)$ if $g_1(k) = g_2(k)$ for each $k \in d^*(k, g_1)$; that is, $a(k, g)$ must only depend on the values of $g$ on $d^*(k, g)$.
+            For each $k \in K, v \in V$, $\hat{d}(k) \subseteq d(k, v)$.
           \item
             $a(k, g_1) \vee_{k, g_1 \vee g_2} a(k, g_2) = a(k, g_1 \vee g_2)$; that is, the join of two autofill values on two mappings must be an autofill value on the joined mapping.
         \end{itemize}
+
+        where we write $a(k, g) := a(k, g|_{\hat{d}(k)})$ for brevity.
+
 
         A mapping $g : K \rightarrow V$ is an \emph{autofill mapping} if:
         
@@ -70,6 +73,7 @@
           \item $g(k) = a(k, g)$ for all but a finite number of $k$ values.
           \item $g(k) \vee_{k, g} a(k, g) = g(k)$ for all $k \in K$.
         \end{itemize}
+
 
         An autofill mapping can be represented as a finite set of $K \times V$ pairs; the remaining values are filled in automatically.
 
@@ -80,7 +84,7 @@
         \begin{proof}
 
           Whenever $g_1(k) = a(k, g_1)$ and $g_2(k) = a(k, g_2)$ (which is true for all but a finite number of $k$ values):
-           $$(g_1 \vee g_2)(k) = g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k) = a(k, g_1) \vee_{k, (g_1 \vee g_2)} a(k, g_2) = a(k, g_1 \vee g_2)$$
+           $$(g_1 \vee g_2)(k) = g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k) = a(k, g_1) \vee_{k, g_1 \vee g_2} a(k, g_2) = a(k, g_1 \vee g_2)$$
 
           Additionally, for each $k \in K$:
           \begin{align*}
@@ -91,6 +95,13 @@
             &= (g_1 \vee g_2)(k)
           \end{align*}
         \end{proof}
+
+        For an autofill mapping $g$, we can define the \emph{concrete dependencies} of a key $k \in K$, which are a set of non-autofill keys of $g$ that are sufficient to derive $k$'s dependencies:
+
+        $$c(k, g) := \bigcup_{k' \in d(k, g(k))} \begin{cases}
+          \{k'\} & \text{if } g(k') \neq a(k, g) \\
+          c(k', g) & \text{otherwise}
+        \end{cases}  $$
 
 
         Merging two mappings can be done recursively. Given mappings $g_1$ and $g_2$ and a key $k$, we compute the values $g_1(k), g_2(k)$ and their dependency sets $d(k, g_1(k)), d(k, g_2(k))$. We recursively merge $g_1$ and $g_2$ on each key in either dependency set, caching intermediate values to avoid repetated recursive calls. Finally, we compute the join and cache it in the database.
