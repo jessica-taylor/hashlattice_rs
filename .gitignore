@@ -1,1 +1,4 @@
 target
+*.aux
+*.pdf
+*.log

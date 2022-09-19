@@ -35,7 +35,7 @@
         And satisfies the following properties:
 
         \begin{itemize}
-            \item $d$ must be well-founded; that is, there are no infinite sequences $k_1, k_2, \ldots \in K$ and $v_1, v_2, \ldots \in V$ such that $k_{i+1} \in d(k_i, v_i)$ for $i = 1, \ldots$
+            \item $d$ must be well-founded; that is, there are no infinite sequences $k_1, k_2, \ldots \in K$ and $v_1, v_2, \ldots \in V$ such that $k_{i+1} \in d(k_i, v_i)$ for $i = 1, 2, \ldots$
             \item $j$ must be a valid join function; for any $k : K$, $g: K \rightarrow V$, defining $x \vee_{k,g} y := j(k, x, y, g|_{d(k, x) \cup d(k, y)})$, then $(V, \vee_{k,g})$ must be a semilattice.
             \item $j$ must not grow dependencies; that is, for any $k : K$, $g: K \rightarrow V$, $x, y \in V$, we must have $d(k, x \vee_{k, g} y) \subseteq d(k, x) \cup d(k, y)$.
         \end{itemize}
