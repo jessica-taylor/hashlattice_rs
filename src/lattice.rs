@@ -17,7 +17,7 @@ pub trait LatGraph : Send + Sync {
     /// Joins two values given dependencies.
     fn join(&self, key: &Self::K, v1: &Self::V, v2: &Self::V, deps: &BTreeMap<Self::K, Self::V>) -> Result<Self::V, String>;
 
-    /// The default element of the lattice.
+    /// The default element of the lattice. Must have no dependencies.
     fn default(&self, key: &Self::K) -> Result<Self::V, String>;
 }
 
