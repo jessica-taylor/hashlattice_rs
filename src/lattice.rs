@@ -17,8 +17,8 @@ pub trait LatGraph : Send + Sync {
     /// Joins two values given dependencies.
     fn join(&self, key: &Self::K, v1: &Self::V, v2: &Self::V, deps: &BTreeMap<Self::K, Self::V>) -> Result<Self::V, String>;
 
-    /// The default element of the lattice. Must have no dependencies.
-    fn default(&self, key: &Self::K) -> Result<Self::V, String>;
+    /// The default element of the lattice.
+    fn autofill(&self, key: &Self::K, vals: &mut dyn FnMut(&Vec<Self::K>) -> Result<Self::V, String>) -> Result<Self::V, String>;
 }
 
 
@@ -61,9 +61,16 @@ impl<'a, L: LatGraph + 'static> LatGraph for SerializeLatGraph<'a, L> {
         rmp_serde::to_vec_named(&v).map_err(|e| format!("failed to serialize value: {}", e))
     }
 
-    fn default(&self, key: &Self::K) -> Result<Self::V, String> {
+    fn autofill(&self, key: &Self::K, vs: &mut dyn FnMut(&Vec<Self::K>) -> Result<Self::V, String>) -> Result<Self::V, String> {
         let key = rmp_serde::from_slice(key).map_err(|e| format!("failed to deserialize key: {}", e))?;
-        let v = self.0.default(&key)?;
+        let v = self.0.autofill(&key, &mut move |ks| {
+            let mut ks2 = Vec::new();
+            for k in ks {
+                ks2.push(rmp_serde::to_vec(&k).map_err(|e| format!("failed to serialize key: {}", e))?);
+            }
+            let res = vs(&ks2)?;
+            rmp_serde::from_slice(&res).map_err(|e| format!("failed to deserialize value: {}", e))
+        })?;
         rmp_serde::to_vec_named(&v).map_err(|e| format!("failed to serialize value: {}", e))
     }
 }
@@ -112,11 +119,11 @@ where L::K: IsEnum, L::V: IsEnum {
         self.0[branch].join(key, v1, v2, deps)
     }
 
-    fn default(&self, key: &Self::K) -> Result<Self::V, String> {
+    fn autofill(&self, key: &Self::K, vals: &mut dyn FnMut(&Vec<Self::K>) -> Result<Self::V, String>) -> Result<Self::V, String> {
         let branch = key.get_branch();
         if branch >= self.0.len() {
             return Err(format!("branch {} out of range", branch));
         }
-        self.0[branch].default(key)
+        self.0[branch].autofill(key, vals)
     }
 }
