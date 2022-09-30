@@ -27,7 +27,7 @@
 
         \begin{itemize}
             \item A set of keys $K$.
-            \item A set of values $V$.
+            \item A nonempty set of values $V$.
             \item A dependency function $d : K \times V \rightarrow 2^K$ that maps each key to a finite set of keys, its dependencies.
             \item A join function $j : (\Sigma (k: K, x : V, y : V), d(k, x) \cup d(k, y) \rightarrow V) \rightarrow V$ that joins two values given their dependencies. (The sigma set $\Sigma (a: A), B(a)$ denotes a set of pairs $(a, b)$ where $a \in A$ and $b \in B(a)$.)
         \end{itemize}
@@ -35,7 +35,7 @@
         And satisfies the following properties:
 
         \begin{itemize}
-            \item $d$ must be well-founded; that is, there are no infinite sequences $k_1, k_2, \ldots \in K$ and $v_1, v_2, \ldots \in V$ such that $k_{i+1} \in d(k_i, v_i)$ for $i = 1, 2, \ldots$
+            \item $d$ must be well-founded; that is, there are no infinite dependency chains $k_1, k_2, \ldots \in K$ and $v_1, v_2, \ldots \in V$ such that $k_{i+1} \in d(k_i, v_i)$ for $i = 1, 2, \ldots$
             \item $j$ must be a valid join function; for any $k : K$, $g: K \rightarrow V$, defining $x \vee_{k,g} y := j(k, x, y, g|_{d(k, x) \cup d(k, y)})$, then $(V, \vee_{k,g})$ must be a semilattice.
             \item $j$ must not grow dependencies; that is, for any $k : K$, $g: K \rightarrow V$, $x, y \in V$, we must have $d(k, x \vee_{k, g} y) \subseteq d(k, x) \cup d(k, y)$.
         \end{itemize}
@@ -45,6 +45,35 @@
         $$ (g_1 \vee g_2)(k) := g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k) $$
 
         where the recursion is well-founded due to $d$ being well-founded.
+
+        We must now show that $\vee$ is commutative, associative, and idempotent, inductively. For any natural $n$ we say $\vee$ (applied to semilattice graphs) forms a semilattice up to $n$ if, for any $k : K$ whose longest dependency chain is no longer than $n$, we have:
+
+        \begin{itemize}
+          \item $(g_1 \vee g_2)(k) = (g_2 \vee g_1)(k)$
+          \item $((g_1 \vee g_2) \vee g_3)(k) = (g_1 \vee (g_2 \vee g_3))(k)$
+          \item $(g \vee g)(k) = g(k)$
+        \end{itemize}
+
+        We note that if $\vee$ forms a semilattice up to all $n$, then it forms a semilattice. We now note that if $\vee$ forms a semilattice up to $n$, then it forms a semilattice up to $n+1$, inductively:
+
+        % WANT: (g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k)) \vee_{k, (g_1 \vee g_2 \vee g_3)} g_3(k)
+        %     = g_1(k) \vee_{k, g_1 \vee g_2 \vee g_3} (g_2(k) \vee_{k, g_2 \vee g_3} g_3(k))
+        % HAVE: (g_1(k) \vee_{k, (g_1 \vee g_2 \vee g_3)}) \vee_{k, (g_1 \vee g_2 \vee g_3)} g_3(k)
+        %     = g_1(k) \vee_{k, g_1 \vee g_2 \vee g_3} (g_2(k) \vee_{k, (g_1 \vee g_2 \vee g_3)} g_3(k))
+
+        \begin{itemize}
+          \item $(g_1 \vee g_2)(k) = g_2(k) \vee_{k, (g_1 \vee g_2)} g_1(k) = g_2(k) \vee_{k, (g_2 \vee g_1)} g_1(k) = (g_2 \vee g_1)(k)$
+          \item
+            \begin{align*}
+              ((g_1 \vee g_2) \vee g_3))(k) &= (g_1 \vee g_2)(k) \vee_{k, ((g_1 \vee g_2) \vee g_3)} g_3(k) \\
+              &= (g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k)) \vee_{k, (g_1 \vee (g_2 \vee g_3))} g_3(k) \\
+              &= g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k) \vee_{k, (g_1 \vee g_2)} g_3(k) \\
+              &= g_1(k) \vee_{k, (g_1 \vee g_2)} (g_2(k) \vee_{k, (g_1 \vee g_2)} g_3(k)) \\
+              &= g_1(k) \vee_{k, (g_1 \vee g_2)} (g_2 \vee g_3)(k) \\
+              &= (g_1 \vee (g_2 \vee g_3))(k)
+            \end{align*}
+          \item $(g_1 \vee g_1)(k) = g_1(k) \vee_{k, (g_1 \vee g_1)} g_1(k) = g_1(k)$
+        \end{itemize}
 
     \section{Autofills}
 
