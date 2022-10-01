@@ -5,6 +5,7 @@
 \usepackage{amsmath}
 \usepackage{amssymb}
 \newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
 
 \title{Semilattice Graphs for Distributed Databases}
 \author{Jessica Taylor}
@@ -28,7 +29,7 @@
 
       Note that if $x \leq y$ and $y \leq x$, then $x = x \vee y = y$.
 
-      Semilattices form a category $\mathrm{Semilattice}$.  The objects are semilattices and the morphisms are coproduct-preserving functors between semilattices. A functor between two semilattices $L_1, L_2$ consists of a function $f: L_1 \rightarrow L_2$ mapping elements of $L_1$ to elements of $L_2$, such that if $x \leq y$, then $f(x) \leq f(y)$. The functor is said to preserve coproducts/joins if $f(x \vee y) = f(x) \vee f(y)$ for all $x, y : L_1$. The $\mathrm{Semilattice}$ category has products in the obvious way.
+      Semilattices form a category $\mathrm{Semilattice}$.  The objects are semilattices and the morphisms are coproduct-preserving functors between semilattices. A functor between two semilattices $L_1, L_2$ consists of a function $f: L_1 \rightarrow L_2$ mapping elements of $L_1$ to elements of $L_2$ that preserves joins in the sense that for $x_1 : L_1, x_2 : L_2$, $f(x_1 \vee x_2) = f(x_1) \vee f(x_2)$. From this condition it follows that if $x \leq y$, then $f(x) \leq f(x) \vee f(y) = f(x \vee y) = f(y)$. The $\mathrm{Semilattice}$ category has products in the obvious way.
 
       A semilattice fibration on a semilattice $L$ is a functor $g : L \rightarrow \mathrm{Semilattice}$, which assigns to each element $x$ of $L$ a semilattice $g(x)$, and assigns to each ordering $x \leq y$ a semilattice functor $g(x \leq y)$ from $g(x)$ to $g(y)$.
 
@@ -71,12 +72,12 @@
       \begin{itemize}
         \item For any $x : L, x' : g_l(x)$: $$g_t(x, x, x') = x'$$.
         \item For any $x, y, z : L$ such that $x \leq y \leq z$, and $x' : g_l(x)$: $$g_t(y, z, g_t(x, y, x')) = g_t(x, z, x')$$.
-        \item For any $x, y : L$ such that $x \leq y$, and $x'_1, x'_2 : g_l(x)$ such that $x'_1 \leq x'_2$: $$g_t(x, y, x'_1) \leq g_t(x, y, x'_2)$$.
+        \item For any $x, y : L$ such that $x \leq y$, and $x'_1, x'_2 : g_l(x)$: $$g_t(x, y, x'_1 \vee x'_2) = g_t(x, y, x'_1) \vee g_t(x, y, x'_2)$$.
       \end{itemize}
 
       This is equivalent to the above category-theoretic definition. $g_l$ corresponds to the semilattice fibration functor's action on objects, and $g_t$ to its action on morphisms (itself a functor). The first two conditions ensure that $(g_l, g_t)$ is a functor, while the third ensures that $g_t(x, y, \cdot)$ is a semilattice functor.
 
-      Intuitively, the first condition states that transporting a value $x'$ when not changing its dependency $x$ doesn't change $x'$; the second condition states dependency updates aren't path-dependent; and the third states that transports preserve ordering.
+      Intuitively, the first condition states that transporting a value $x'$ when not changing its dependency $x$ doesn't change $x'$; the second condition states dependency updates aren't path-dependent; and the third states transports distribute over joins.
 
       The total space is then a semilattice whose elements are pairs $(x, x')$ where $x : L$ and $x' : g_l(x)$. The join is defined as $(x, x') \vee (y, y') := (x \vee y, g_t(x, x \vee y, x') \vee g_t(y, x \vee y, y'))$. This is equivalent to the above category-theoretic definition, proving it is a semilattice.
 
@@ -104,8 +105,8 @@
             \item $j$ must not grow dependencies; that is, for any $k : K, v_1 : V, v_2: V, g: (d(k, v_1) \cup d(k, v_2)) \rightarrow V$, we must have $d(k, j(k, v_1, v_2, g)) \subseteq d(k, v_1) \cup d(k, v_2)$.
             \item $t$ must be an identity when dependencies are equal: for $k : K, v : V, g : d(k, v) \rightarrow V$, we must have $t(k, v, g, g) = v$.
             \item $t$ must not be path-dependent: for $k : K, v : V, g_1, g_2, g_3 : d(k, v) \rightarrow V$, we must have $t(k, t(k, v, g_1, g_2), g_2, g_3) = t(k, v, g_1, g_3)$.
-            \item $t$ must preserve orderings: for $k : K, v_1, v_2 : V, g_1, g_2 : d(k, v) \rightarrow V$, such that $j(k, v_1, v_2, g_1) = v_2$, we must have $j(k, t(k, v_1, g_1, g_2), t(k, v_2, g_1, g_2)) = t(k, v_2, g_1, g_2)$.
-            \item For any $k: K, g : K \rightarrow V$, it must be that $\vee_{k, g}$ is commutative, associative, and idempotent.
+            \item $t$ must distribute over $j$: for $k : K, v_1, v_2 : V, g_1, g_2 : d(k, v_1) \cup d(k, v_2) \rightarrow V$, we must have $t_{k, g_1, g_2}(v_1 \vee_{k, g_1} v_2) = t_{k, g_1, g_2}(v_1) \vee_{k, g_2} t_{k, g_1, g_2}(v_2)$.
+            \item For any $k: K, g : K \rightarrow V$, we must have that $\vee_{k, g}$ is commutative, associative, and idempotent.
         \end{itemize}
 
         It is now possible to define a semilattice over a semilattice graph. This lattice's items are functions $g : K \rightarrow V$ (called \emph{mappings}). The join operation is defined as follows:
