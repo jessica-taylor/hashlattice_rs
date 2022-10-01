@@ -102,23 +102,23 @@
         \begin{itemize}
             \item $d$ must be well-founded; that is, there are no infinite dependency chains $k_1, k_2, \ldots \in K$ and $v_1, v_2, \ldots \in V$ such that $k_{i+1} \in d(k_i, v_i)$ for $i = 1, 2, \ldots$
             \item $t$ must not grow dependencies: for $k : K, v : V, g_1, g_2 : d(k, v) \rightarrow V$, we must have $d(k, t(k, v, g_1, g_2)) \subseteq d(k, v)$.
-            \item $j$ must not grow dependencies; that is, for any $k : K, v_1 : V, v_2: V, g: (d(k, v_1) \cup d(k, v_2)) \rightarrow V$, we must have $d(k, j(k, v_1, v_2, g)) \subseteq d(k, v_1) \cup d(k, v_2)$.
+            \item $j$ must not grow dependencies; for any $k : K, v_1 : V, v_2: V, g: d(k, v_1) \cup d(k, v_2) \rightarrow V$, we must have $d(k, j(k, v_1, v_2, g)) \subseteq d(k, v_1) \cup d(k, v_2)$.
             \item $t$ must be an identity when dependencies are equal: for $k : K, v : V, g : d(k, v) \rightarrow V$, we must have $t(k, v, g, g) = v$.
-            \item $t$ must not be path-dependent: for $k : K, v : V, g_1, g_2, g_3 : d(k, v) \rightarrow V$, we must have $t(k, t(k, v, g_1, g_2), g_2, g_3) = t(k, v, g_1, g_3)$.
+            \item $t$ must not be path-dependent: for $k : K, v : V, g_1, g_2, g_3: d(k, v) \rightarrow V$, we must have $t_{k, g_2, g_3} \circ t_{k, g_1, g_2} = t_{k, g_1, g_3}$.
             \item $t$ must distribute over $j$: for $k : K, v_1, v_2 : V, g_1, g_2 : d(k, v_1) \cup d(k, v_2) \rightarrow V$, we must have $t_{k, g_1, g_2}(v_1 \vee_{k, g_1} v_2) = t_{k, g_1, g_2}(v_1) \vee_{k, g_2} t_{k, g_1, g_2}(v_2)$.
             \item For any $k: K, g : K \rightarrow V$, we must have that $\vee_{k, g}$ is commutative, associative, and idempotent.
         \end{itemize}
 
         It is now possible to define a semilattice over a semilattice graph. This lattice's items are functions $g : K \rightarrow V$ (called \emph{mappings}). The join operation is defined as follows:
 
-        $$ (g_1 \vee g_2)(k) := t_{k, g_1, (g_1 \vee g_2)}(g_1(k)) \vee_{k, (g_1 \vee g_2)} t_{k, g_2, (g_1 \vee g_2)}(g_2(k))$$.
+        $$ (g_1 \vee g_2)(k) := t_{k, g_1, g_1 \vee g_2}(g_1(k)) \vee_{k, g_1 \vee g_2} t_{k, g_2, g_1 \vee g_2}(g_2(k))$$.
 
         We must now show that $\vee$ is commutative, associative, and idempotent, inductively. For any natural $n$ we say $\vee$ (applied to semilattice graphs) forms a semilattice up to $n$ if, for any $k : K$ whose longest dependency chain is no longer than $n$, we have:
 
         \begin{itemize}
-          \item $(g_1 \vee g_2)(k) = (g_2 \vee g_1)(k)$
-          \item $((g_1 \vee g_2) \vee g_3)(k) = (g_1 \vee (g_2 \vee g_3))(k)$
-          \item $(g \vee g)(k) = g(k)$
+          \item \emph{Commutative}: $(g_1 \vee g_2)(k) = (g_2 \vee g_1)(k)$
+          \item \emph{Associative}: $((g_1 \vee g_2) \vee g_3)(k) = (g_1 \vee (g_2 \vee g_3))(k)$
+          \item \emph{Idempotent}: $(g \vee g)(k) = g(k)$
         \end{itemize}
 
         We note that if $\vee$ forms a semilattice up to all $n$, then it forms a semilattice. We now note that if $\vee$ forms a semilattice up to $n$, then it forms a semilattice up to $n+1$, inductively:
