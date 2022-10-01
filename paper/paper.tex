@@ -16,8 +16,69 @@
     \section{Introduction}
         A \emph{semilattice} is a set $L$ with a binary operation $\vee$ (``join'') that is commutative ($x \vee y = y \vee x$), associative ($(x \vee y) \vee z = x \vee (y \vee z)$), and idempotent ($x \vee x = x$).
 
+        We write $x \leq y$ to mean $y = x \vee y$.
+
         In databases, lattices are useful for defining a notion of a most updated value. For example, with $L$ as a set of sets of messages and $\vee = \cup$, the lattice represents sets of messages that are updated to include more messages as they come in.
 
+    \section{Semilattices as a category}
+
+      We discuss category theoretic language for semilattices to derive a notion of dependency between semilattices. In the next section, we drop the category-theoretic language, so it is not strictly necessary to understand category theory to understand the result, although it helps with the derivation.
+
+      A semilattice can be interpreted as a category whose objects are the members of $L$, and where a morphism exists between $x$ and $y$ if and only if $x \leq y$; in this case there must be exactly one morphism of this form denoted $x \leq y$. To be a semilattice, the category must have coproducts (corresponding to joins).
+
+      Note that if $x \leq y$ and $y \leq x$, then $x = x \vee y = y$.
+
+      Semilattices form a category $\mathrm{Semilattice}$.  The objects are semilattices and the morphisms are coproduct-preserving functors between semilattices. A functor between two semilattices $L_1, L_2$ consists of a function $f: L_1 \rightarrow L_2$ mapping elements of $L_1$ to elements of $L_2$, such that if $x \leq y$, then $f(x) \leq f(y)$. The functor is said to preserve coproducts/joins if $f(x \vee y) = f(x) \vee f(y)$ for all $x, y : L_1$. The $\mathrm{Semilattice}$ category has products in the obvious way.
+
+      A semilattice fibration on a semilattice $L$ is a functor $g : L \rightarrow \mathrm{Semilattice}$, which assigns to each element $x$ of $L$ a semilattice $g(x)$, and assigns to each ordering $x \leq y$ a semilattice functor $g(x \leq y)$ from $g(x)$ to $g(y)$.
+
+      The total space's elements consist of pairs $(x, x')$ where $x : L$ and $x' : g(x)$. We consider $(x, x') \leq (y, y')$ when $x \leq y$ and $g(x \leq y)(x') \leq y'$. The total space is a semilattice, as shown:
+
+      \begin{theorem}
+        The total space of a semilattice fibration $g$ is a semilattice.
+      \end{theorem}
+      \begin{proof}
+        Consider two elements of the total space, $(x, x'), (y, y')$. Their join is defined as $(x, x') \vee (y, y') := (x \vee y', g(x \leq x \vee y)(x') \vee g(y \leq x \vee y)(y'))$. We must show that this join is commutative, associative, and idempotent.
+        \begin{itemize}
+          \item \emph{Commutative}:
+            \begin{align*}
+              (x, x') \vee (y, y') &= (x \vee y, g(x \leq x \vee y)(x') \vee g(y \leq x \vee y)(y')) \\
+              &= (y \vee x, g(y \leq y \vee x)(y') \vee g(x \leq y \vee x)(x')) \\
+              &= (y, y') \vee (x, x')
+            \end{align*}
+          \item \emph{Associative}:
+            \begin{align*} &((x, x') \vee (y, y')) \vee (z, z')  \\
+              =& (x \vee y \vee z, g(x \vee y \leq x \vee y \vee z)(g(x \leq x \vee y)(x') \vee g(y \leq x \vee y)(y')) \vee g(z \leq x \vee y \vee z)(z')) \\
+              =& (x \vee y \vee z, g(x \leq x \vee y \vee z)(x') \vee g(y \leq x \vee y \vee z)(y') \vee g(z \leq x \vee y \vee z)(z') \\
+              =& (x \vee y \vee z, g(x \leq x \vee y \vee z)(x') \vee g(y \vee z \leq x \vee y \vee z)(g(y \leq y \vee z)(y') \vee g(z \leq y \vee z)(z')) \\
+              =& (x, x') \vee ((y, y') \vee (z, z'))
+            \end{align*}
+          \item \emph{Idempotent}: 
+            \begin{align*}
+              (x, x') \vee (x, x') &= (x \vee x, g(x \leq x \vee x)(x') \vee g(x \leq x \vee x)(x')) \\
+              &= (x, g(x \leq x)(x')) \\
+              &= (x, x')
+            \end{align*}
+        \end{itemize}
+      \end{proof}
+
+    \section{De-categorizing semilattice fibrations}
+
+      To define a semilattice fibration more directly, we can remove the category-theoretic language, achieving a more direct presentation.
+
+      A semilattice fibration consists of a function $g_l : L \rightarrow \mathrm{Semilattice}$, assigning to each element of $L$ a semilattice, and a function $g_t : \Pi (x, y : L, x \leq y, x' : g(x)), g(y)$ (a ``transport function''), satisfying:
+
+      \begin{itemize}
+        \item For any $x : L, x' : g_l(x)$: $$g_t(x, x, x') = x'$$.
+        \item For any $x, y, z : L$ such that $x \leq y \leq z$, and $x' : g_l(x)$: $$g_t(y, z, g_t(x, y, x')) = g_t(x, z, x')$$.
+        \item For any $x, y : L$ such that $x \leq y$, and $x'_1, x'_2 : g_l(x)$ such that $x'_1 \leq x'_2$: $$g_t(x, y, x'_1) \leq g_t(x, y, x'_2)$$.
+      \end{itemize}
+
+      This is equivalent to the above category-theoretic definition. $g_l$ corresponds to the semilattice fibration functor's action on objects, and $g_t$ to its action on morphisms (itself a functor). The first two conditions ensure that $(g_l, g_t)$ is a functor, while the third ensures that $g_t(x, y, \cdot)$ is a semilattice functor.
+
+      Intuitively, the first condition states that transporting a value $x'$ when not changing its dependency $x$ doesn't change $x'$; the second condition states dependency updates aren't path-dependent; and the third states that transports preserve ordering.
+
+      The total space is then a semilattice whose elements are pairs $(x, x')$ where $x : L$ and $x' : g_l(x)$. The join is defined as $(x, x') \vee (y, y') := (x \vee y, g_t(x, x \vee y, x') \vee g_t(y, x \vee y, y'))$. This is equivalent to the above category-theoretic definition, proving it is a semilattice.
 
     \section{Semilattice Graphs}
 
@@ -28,23 +89,28 @@
         \begin{itemize}
             \item A set of keys $K$.
             \item A nonempty set of values $V$.
-            \item A dependency function $d : K \times V \rightarrow 2^K$ that maps each key to a finite set of keys, its dependencies.
-            \item A join function $j : (\Sigma (k: K, x : V, y : V), d(k, x) \cup d(k, y) \rightarrow V) \rightarrow V$ that joins two values given their dependencies. (The sigma set $\Sigma (a: A), B(a)$ denotes a set of pairs $(a, b)$ where $a \in A$ and $b \in B(a)$.)
+            \item A dependency function $d : K \times V \rightarrow 2^K$ that maps each key and value to a finite set of keys, its dependencies.
+            \item A transport function $t : \Pi (k : K, v : V), (d(k, v) \rightarrow V)^2 \rightarrow V$ that transports a value when its dependencies change.
+            \item A join function $j : \Pi (k : K, v_1, v_2 : V), (d(k, v_1) \cup d(k, v_2) \rightarrow V) \rightarrow V$ that maps two values to a value given their dependencies.
         \end{itemize}
 
-        And satisfies the following properties:
+        We write $v_1 \vee_{k, g} v_2 := j(k, v_1, v_2, g|_{d(k, v_1) \cup d(k, v_2)})$, and $t_{k, g_1, g_2}(v) := t(k, v, g_1|_{d(k, v)}, g_2|_{d(k, v)})$.
+
+        The semilattice graph must satisfy the following properties:
 
         \begin{itemize}
             \item $d$ must be well-founded; that is, there are no infinite dependency chains $k_1, k_2, \ldots \in K$ and $v_1, v_2, \ldots \in V$ such that $k_{i+1} \in d(k_i, v_i)$ for $i = 1, 2, \ldots$
-            \item $j$ must be a valid join function; for any $k : K$, $g: K \rightarrow V$, defining $x \vee_{k,g} y := j(k, x, y, g|_{d(k, x) \cup d(k, y)})$, then $(V, \vee_{k,g})$ must be a semilattice.
-            \item $j$ must not grow dependencies; that is, for any $k : K$, $g: K \rightarrow V$, $x, y \in V$, we must have $d(k, x \vee_{k, g} y) \subseteq d(k, x) \cup d(k, y)$.
+            \item $t$ must not grow dependencies: for $k : K, v : V, g_1, g_2 : d(k, v) \rightarrow V$, we must have $d(k, t(k, v, g_1, g_2)) \subseteq d(k, v)$.
+            \item $j$ must not grow dependencies; that is, for any $k : K, v_1 : V, v_2: V, g: (d(k, v_1) \cup d(k, v_2)) \rightarrow V$, we must have $d(k, j(k, v_1, v_2, g)) \subseteq d(k, v_1) \cup d(k, v_2)$.
+            \item $t$ must be an identity when dependencies are equal: for $k : K, v : V, g : d(k, v) \rightarrow V$, we must have $t(k, v, g, g) = v$.
+            \item $t$ must not be path-dependent: for $k : K, v : V, g_1, g_2, g_3 : d(k, v) \rightarrow V$, we must have $t(k, t(k, v, g_1, g_2), g_2, g_3) = t(k, v, g_1, g_3)$.
+            \item $t$ must preserve orderings: for $k : K, v_1, v_2 : V, g_1, g_2 : d(k, v) \rightarrow V$, such that $j(k, v_1, v_2, g_1) = v_2$, we must have $j(k, t(k, v_1, g_1, g_2), t(k, v_2, g_1, g_2)) = t(k, v_2, g_1, g_2)$.
+            \item For any $k: K, g : K \rightarrow V$, it must be that $\vee_{k, g}$ is commutative, associative, and idempotent.
         \end{itemize}
 
-        It is now possible to define a semilattice over a semilattice graph. This lattice's items are functions $K \rightarrow V$ (called \emph{mappings}) and the join operation is defined as follows:
+        It is now possible to define a semilattice over a semilattice graph. This lattice's items are functions $g : K \rightarrow V$ (called \emph{mappings}). The join operation is defined as follows:
 
-        $$ (g_1 \vee g_2)(k) := g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k) $$
-
-        where the recursion is well-founded due to $d$ being well-founded.
+        $$ (g_1 \vee g_2)(k) := t_{k, g_1, (g_1 \vee g_2)}(g_1(k)) \vee_{k, (g_1 \vee g_2)} t_{k, g_2, (g_1 \vee g_2)}(g_2(k))$$.
 
         We must now show that $\vee$ is commutative, associative, and idempotent, inductively. For any natural $n$ we say $\vee$ (applied to semilattice graphs) forms a semilattice up to $n$ if, for any $k : K$ whose longest dependency chain is no longer than $n$, we have:
 
@@ -56,23 +122,39 @@
 
         We note that if $\vee$ forms a semilattice up to all $n$, then it forms a semilattice. We now note that if $\vee$ forms a semilattice up to $n$, then it forms a semilattice up to $n+1$, inductively:
 
-        % WANT: (g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k)) \vee_{k, (g_1 \vee g_2 \vee g_3)} g_3(k)
-        %     = g_1(k) \vee_{k, g_1 \vee g_2 \vee g_3} (g_2(k) \vee_{k, g_2 \vee g_3} g_3(k))
-        % HAVE: (g_1(k) \vee_{k, (g_1 \vee g_2 \vee g_3)}) \vee_{k, (g_1 \vee g_2 \vee g_3)} g_3(k)
-        %     = g_1(k) \vee_{k, g_1 \vee g_2 \vee g_3} (g_2(k) \vee_{k, (g_1 \vee g_2 \vee g_3)} g_3(k))
-
         \begin{itemize}
-          \item $(g_1 \vee g_2)(k) = g_2(k) \vee_{k, (g_1 \vee g_2)} g_1(k) = g_2(k) \vee_{k, (g_2 \vee g_1)} g_1(k) = (g_2 \vee g_1)(k)$
-          \item
+          \item \emph{Commutative}:
             \begin{align*}
-              ((g_1 \vee g_2) \vee g_3))(k) &= (g_1 \vee g_2)(k) \vee_{k, ((g_1 \vee g_2) \vee g_3)} g_3(k) \\
-              &= (g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k)) \vee_{k, (g_1 \vee (g_2 \vee g_3))} g_3(k) \\
-              &= g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k) \vee_{k, (g_1 \vee g_2)} g_3(k) \\
-              &= g_1(k) \vee_{k, (g_1 \vee g_2)} (g_2(k) \vee_{k, (g_1 \vee g_2)} g_3(k)) \\
-              &= g_1(k) \vee_{k, (g_1 \vee g_2)} (g_2 \vee g_3)(k) \\
-              &= (g_1 \vee (g_2 \vee g_3))(k)
+              (g_1 \vee g_2)(k) &= t_{k, g_1, (g_1 \vee g_2)}(g_1(k)) \vee_{k, (g_1 \vee g_2)} t_{k, g_2, (g_1 \vee g_2)}(g_2(k)) \\
+              &= t_{k, g_2, (g_2 \vee g_1)}(g_2(k)) \vee_{k, (g_2 \vee g_1)} t_{k, g_1, (g_2 \vee g_1)}(g_1(k)) \\
+              &= (g_2 \vee g_1)(k)
             \end{align*}
-          \item $(g_1 \vee g_1)(k) = g_1(k) \vee_{k, (g_1 \vee g_1)} g_1(k) = g_1(k)$
+          \item \emph{Associative}:
+            \begin{align*}
+              &((g_1 \vee g_2) \vee g_3))(k) \\
+              =& t_{k, (g_1 \vee g_2), (g_1 \vee g_2 \vee g_3)}((g_1 \vee g_2)(k)) \vee_{k, (g_1 \vee g_2 \vee g_3)} t_{k, g_3, (g_1 \vee g_2 \vee g_3)}(g_3(k)) \\
+              =& t_{k, (g_1 \vee g_2), (g_1 \vee g_2 \vee g_3)}(t_{k, g_1, (g_1 \vee g_2)}(g_1(k)) \vee_{k, (g_1 \vee g_2)} t_{k, g_2, (g_1 \vee g_2)}(g_2(k))) \\
+               & \vee_{k, (g_1 \vee g_2 \vee g_3)} t_{k, g_3, (g_1 \vee g_2 \vee g_3)}(g_3(k)) \\
+              =& t_{k, (g_1 \vee g_2), (g_1 \vee g_2 \vee g_3)}(t_{k, g_1, (g_1 \vee g_2)}(g_1(k))) \vee_{k, (g_1 \vee g_2 \vee g_3)} \\
+               & t_{k, (g_1 \vee g_2), (g_1 \vee g_2 \vee g_3)}(t_{k, g_2, (g_1 \vee g_2)}(g_2(k))) \vee_{k, (g_1 \vee g_2 \vee g_3)} \\
+               & t_{k, g_3, (g_1 \vee g_2 \vee g_3)}(g_3(k)) \\
+              =& t_{k, g_1, (g_1 \vee g_2 \vee g_3)}(g_1(k)) \vee_{k, (g_1 \vee g_2 \vee g_3)}
+                 t_{k, g_2, (g_1 \vee g_2 \vee g_3)}(g_2(k)) \vee_{k, (g_1 \vee g_2 \vee g_3)}
+                 t_{k, g_3, (g_1 \vee g_2 \vee g_3)}(g_3(k)) \\
+              =& t_{k, g_1, (g_1 \vee g_2 \vee g_3)}(g_1(k)) \vee_{k, (g_1 \vee g_2 \vee g_3)} \\
+               & t_{k, (g_2 \vee g_3), (g_1 \vee g_2 \vee g_3)}(t_{k, g_2, (g_2 \vee g_3)}(g_2(k))) \vee_{k, (g_1 \vee g_2 \vee g_3)} \\
+               & t_{k, (g_2 \vee g_3), (g_1 \vee g_2 \vee g_3)}(t_{k, g_3, (g_2 \vee g_3)}(g_3(k))) \\
+              =& t_{k, g_1, (g_1 \vee g_2 \vee g_3)}(g_1(k)) \vee_{k, (g_1 \vee g_2 \vee g_3)} \\
+               & t_{k, (g_2 \vee g_3)}(t_{k, g_2, (g_2 \vee g_3)}(g_2(k)) \vee_{k, (g_2 \vee g_3)} t_{k, g_3, (g_2 \vee g_3)}(g_3(k))) \\
+              =& t_{k, g_1, (g_1 \vee g_2 \vee g_3)}(g_1(k)) \vee_{k, (g_1 \vee g_2 \vee g_3)} t_{k, (g_2 \vee g_3)}((g_2 \vee g_3)(k)) \\
+              =& (g_1 \vee (g_2 \vee g_3))(k)
+            \end{align*}
+          \item \emph{Idempotent}:
+            \begin{align*}
+              (g \vee g)(k) &= t_{k, g, (g \vee g)}(g(k)) \vee_{k, (g \vee g)} t_{k, g, (g \vee g)}(g(k)) \\
+              &= t_{k, g, g}(g(k)) \vee_{k, g} t_{k, g, g}(g(k)) \\
+              &= g(k)
+            \end{align*}
         \end{itemize}
 
     \section{Autofills}
