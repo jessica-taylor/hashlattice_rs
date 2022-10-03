@@ -89,14 +89,14 @@
 
       Semilattice fibrations can be composed iteratively. Composing finitely is straightforward, while composing infinitely requires more work.
 
-      Define $T_0$ to be a semilattice with only a single element, $()$. Now suppose we have:
+      Let $L_0$ be an arbitrary semilattice. Now suppose we have:
 
       \begin{align*}
-        (l_n, t_n) &: \mathrm{SemiFibration}(T_{n-1}) & \text{ for natural $n \geq 1$ } \\
-        T_n &:= \mathrm{SemiTot}(T_{n-1}, l_n, t_n)    & \text{ for natural $n \geq 1$ }
+        (l_n, t_n) &: \mathrm{SemiFibration}(L_{n-1}) & \text{ for natural $n \geq 1$ } \\
+        L_n &:= \mathrm{SemiTot}(L_{n-1}, l_n, t_n)    & \text{ for natural $n \geq 1$ }
       \end{align*}
 
-      We now wish to define $L_\omega$ to be a semilattice that is, morally speaking, the limit of $L_n$. This lattice's elements are infinite lists $x_1, x_2, \ldots$ satisfying $x_n : l_n(x_{<n})$ for each natural $n \geq 1$, where $x_{<n} = x_1, \ldots, x_{n-1} : T_{n-1}$. The joins are defined as follows:
+      We now wish to define $L_\omega$ to be a semilattice that is, morally speaking, the limit of $L_n$. This lattice's elements are infinite lists $x_1, x_2, \ldots$ satisfying $x_n : l_n(x_{<n})$ for each natural $n \geq 1$, where $x_{<n} = x_1, \ldots, x_{n-1} : L_{n-1}$. The joins are defined as follows:
 
       $$(\overline{x} \vee \overline{y})_n := t_n(x_{<n}, x_{<n} \vee y_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n})} t_n(y_{<n}, x_{<n} \vee y_{<n})(y_n)$$
 
