@@ -72,9 +72,9 @@
       A semilattice fibration consists of a function $l : L \rightarrow \mathrm{Semilattice}$, assigning to each element of $L$ a semilattice, and a function $t : \Pi (x, y : L, x \leq y) l(x) \rightarrow l(y)$ (a ``transport function''), satisfying:
 
       \begin{itemize}
-        \item For any $x : L, x' : l(x)$: $$t(x, x, x') = x'$$.
-        \item For any $x, y, z : L$ such that $x \leq y \leq z$, and $x' : l(x)$: $$t(y, z, t(x, y, x')) = t(x, z, x')$$.
-        \item For any $x, y : L$ such that $x \leq y$, and $x'_1, x'_2 : l(x)$: $$t(x, y, x'_1 \vee x'_2) = t(x, y, x'_1) \vee t(x, y, x'_2)$$.
+        \item For any $x : L, x' : l(x)$: $$t(x, x) = \mathsf{id}$$.
+        \item For any $x, y, z : L$ such that $x \leq y \leq z$, and $x' : l(x)$: $$t(y, z) \circ t(x, y) = t(x, z)$$.
+        \item For any $x, y : L$ such that $x \leq y$, and $x'_1, x'_2 : l(x)$: $$t(x, y)(x'_1 \vee x'_2) = t(x, y)(x'_1) \vee t(x, y)(x'_2)$$.
       \end{itemize}
 
       We write $\mathrm{SemiFibration}(L)$ for the set of semilattice fibrations on $L$.
@@ -83,7 +83,7 @@
 
       Intuitively, the first condition states that transporting a value $x'$ when not changing its dependency $x$ doesn't change $x'$; the second condition states dependency updates aren't path-dependent; and the third states transports distribute over joins.
 
-      The total space $\mathrm{SemiTot}(L, l, t)$ is then a semilattice whose elements are pairs $(x, x')$ where $x : L$ and $x' : l(x)$. The join is defined as $(x, x') \vee (y, y') := (x \vee y, t(x, x \vee y, x') \vee t(y, x \vee y, y'))$. This is equivalent to the above category-theoretic definition, proving it is a semilattice.
+      The total space $\mathrm{SemiTot}(L, l, t)$ is then a semilattice whose elements are pairs $(x, x')$ where $x : L$ and $x' : l(x)$. The join is defined as $(x, x') \vee (y, y') := (x \vee y, t(x, x \vee y)(x') \vee t(y, x \vee y)(y'))$. This is equivalent to the above category-theoretic definition, proving it is a semilattice.
 
     \section{Composing semilattice fibrations}
 
@@ -98,7 +98,7 @@
 
       We now wish to define $L_\omega$ to be a semilattice that is, morally speaking, the limit of $L_n$. This lattice's elements are infinite lists $x_1, x_2, \ldots$ satisfying $x_n : l_n(x_{<n})$ for each natural $n \geq 1$, where $x_{<n} = x_1, \ldots, x_{n-1} : T_{n-1}$. The joins are defined as follows:
 
-      $$(\overline{x} \vee \overline{y})_n := t_n(x_{<n}, x_{<n} \vee y_{<n}, x_n) \vee_{l_n(x_{<n} \vee y_{<n})} t_n(y_{<n}, x_{<n} \vee y_{<n}, y_n)$$
+      $$(\overline{x} \vee \overline{y})_n := t_n(x_{<n}, x_{<n} \vee y_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n})} t_n(y_{<n}, x_{<n} \vee y_{<n})(y_n)$$
 
       \begin{theorem}
         $L_{\omega}$ is a semilattice.
@@ -110,40 +110,40 @@
           \item \emph{Commutativity}:
             \begin{align*}
               (\overline{x} \vee \overline{y})_n
-              &= t_n(x_{<n}, x_{<n} \vee y_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n})} t_n(y_{<n}, x_{<n} \vee y_{<n}, y_n) \\
-              &= t_n(y_{<n}, y_{<n} \vee x_{<n})(y_n) \vee_{l_n(y_{<n} \vee x_{<n})} t_n(x_{<n}, y_{<n} \vee x_{<n}, x_n) \\
+              &= t_n(x_{<n}, x_{<n} \vee y_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n})} t_n(y_{<n}, x_{<n} \vee y_{<n})(y_n) \\
+              &= t_n(y_{<n}, y_{<n} \vee x_{<n})(y_n) \vee_{l_n(y_{<n} \vee x_{<n})} t_n(x_{<n}, y_{<n} \vee x_{<n})(x_n) \\
               &= (\overline{y} \vee \overline{x})_n
             \end{align*}
           \item \emph{Associativity}:
             \begin{align*}
               & ((\overline{x} \vee \overline{y}) \vee \overline{z})_n \\
-              =& t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, (\overline{x} \vee \overline{y})_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})}
-                 t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, z_n)  \\
-              =& t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n},
-                          t_n(x_{<n}, x_{<n} \vee y_{<n}, x_n) \vee_{l_n(x_{<n} \vee y_{<n})}
-                          t_n(y_{<n}, x_{<n} \vee y_{<n}, y_n)) \\
-               &\vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, z_n)  \\
-              =& t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, t_n(x_{<n}, x_{<n} \vee y_{<n}, x_n)) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
-               & t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, t_n(y_{<n}, x_{<n} \vee y_{<n}, y_n)) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
-               & t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, z_n)  \\
-              =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
-               & t_n(y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, y_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
-               & t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, z_n)  \\
-              =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
-               & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, t_n(y_{<n}, y_{<n} \vee z_{<n}, y_n)) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
-               & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, t_n(z_{<n}, y_{<n} \vee z_{<n}, z_n))  \\
-              =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
-               & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n},
-                          t_n(y_{<n}, y_{<n} \vee z_{<n}, y_n) \vee_{l_n(y_{<n} \vee z_{<n})}
-                          t_n(z_{<n}, y_{<n} \vee z_{<n}, z_n)) \\
-              =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
-               & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}, (\overline{y} \vee \overline{z})_n) \\
+              =& t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})((\overline{x} \vee \overline{y})_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})}
+                 t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(z_n)  \\
+              =& t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(
+                          t_n(x_{<n}, x_{<n} \vee y_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n})}
+                          t_n(y_{<n}, x_{<n} \vee y_{<n})(y_n)) \\
+               &\vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(z_n)  \\
+              =& t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(t_n(x_{<n}, x_{<n} \vee y_{<n})(x_n)) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(t_n(y_{<n}, x_{<n} \vee y_{<n})(y_n)) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(z_n)  \\
+              =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(y_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(z_n)  \\
+              =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(t_n(y_{<n}, y_{<n} \vee z_{<n})(y_n)) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(t_n(z_{<n}, y_{<n} \vee z_{<n})(z_n))  \\
+              =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(
+                          t_n(y_{<n}, y_{<n} \vee z_{<n})(y_n) \vee_{l_n(y_{<n} \vee z_{<n})}
+                          t_n(z_{<n}, y_{<n} \vee z_{<n})(z_n)) \\
+              =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})((\overline{y} \vee \overline{z})_n) \\
               =& (\overline{x} \vee (\overline{y} \vee \overline{z}))_n
             \end{align*}
           \item \emph{Idempotence}:
             \begin{align*}
-              (\overline{x} \vee \overline{x})_n &= t_n(x_{<n}, x_{<n} \vee x_{<n})(x_n) \vee_{l_n(x_{<n} \vee x_{<n}))} t_n(x_{<n}, x_{<n} \vee x_{<n}, x_n) \\
-              &= t_n(x_{<n}, x_{<n}, x_n) \\
+              (\overline{x} \vee \overline{x})_n &= t_n(x_{<n}, x_{<n} \vee x_{<n})(x_n) \vee_{l_n(x_{<n} \vee x_{<n}))} t_n(x_{<n}, x_{<n} \vee x_{<n})(x_n) \\
+              &= t_n(x_{<n}, x_{<n})(x_n) \\
               &= x_n
             \end{align*}
         \end{itemize}
