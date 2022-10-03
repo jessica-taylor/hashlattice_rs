@@ -89,9 +89,10 @@
 
       Semilattice fibrations can be composed iteratively. Composing finitely is straightforward, while composing infinitely requires more work.
 
-      Let $L_0$ be an arbitrary semilattice. Now suppose we have:
+      Suppose we have:
 
       \begin{align*}
+        L_0 &: \mathrm{Semilattice} & \\
         (l_n, t_n) &: \mathrm{SemiFibration}(L_{n-1}) & \text{ for natural $n \geq 1$ } \\
         L_n &:= \mathrm{SemiTot}(L_{n-1}, l_n, t_n)    & \text{ for natural $n \geq 1$ }
       \end{align*}
@@ -149,12 +150,13 @@
         \end{itemize}
       \end{proof}
 
-      We can further stack to higher ordinals than $\omega$. Let $n_u \geq 1$ be the number of universes. Let $L_{0, 0}$ be an arbitrary semilattice. Assume we have:
+      We can further stack to higher ordinals than $\omega$. Let $n_u \geq 1$ be the number of universes. Assume we have:
 
       \begin{align*}
+        L_{0, 0} &: \mathrm{Semilattice} & \\
         (l_{u, n}, t_{u, n}) &: \mathrm{SemiFibration}(L_{u, n-1}) & \text{for natural $0 \leq u < n_u$, $n \geq 1$ } \\
         L_{u, n} &:= \mathrm{SemiTot}(L_{u, n-1}, l_{u, n}, t_{u, n})    & \text{ for natural $0 \leq u < n_u$, $n \geq 1$ } \\
-        L_{u+1, 0} &:= L_{u, \omega} & \text{ for natural $0 \leq u < n_u - 1$ }
+        L_{u, 0} &:= L_{u-1, \omega} & \text{ for natural $1 \leq u < n_u$ }
       \end{align*}
 
       where $L_{u, \omega}$ is constructed the same way as $L_{\omega}$ above, as the limit of $L_{u, n}$ as $n$ approaches $\infty$. Inductively, each $L_{u, n}$ is a semilattice for natural $0 \leq u < n_u, n \geq 0$; this lattice's ordinal corresponds to $u \omega + n$. While in theory it may be possible to reach higher ordinals $\omega^2$ and beyond, we consider this beyond the scope of this work.
