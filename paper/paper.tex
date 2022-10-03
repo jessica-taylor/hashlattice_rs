@@ -163,6 +163,12 @@
 
     \section{Semilattice Graphs}
 
+      In terms of implementation, it is by default infeasible to construct an element of the semilattice $L_{0, \omega}$, as it is infinite. To ameliorate this problem, we consider semilattices with a bottom element $\bot$ satisfying $\bot \vee x = x$ for each $x$ in the semilattice. We write $\mathrm{Semilattice}_\bot$ for the type of semilattices with $\bot$; $\mathrm{SemiFibration}_\bot(L)$ for the type of bottom-preserving semilattice fibrations on $L : \mathrm{Semilattice}_\bot$; and $\mathrm{SemiTot}_\bot(L, l, t) : \mathrm{Semilattice}_\bot$ for the total space the semilattice $L : \mathrm{Semilattice}_\bot$ and fibration $(l, t) : \mathrm{SemiFibration}_\bot$.
+
+      Using the above definition of semilattice universes, we can now explicitly represent elements of $L_{u, n}$ for which only a finite number of entries are not $\bot$. Joins are straightforward since if one element of the joined universe structure is $\bot$, the join equals the other element.
+
+    \section{Semilattice Graphs}
+
         A common problem in networked computing is dependency managament. A software package may depend on a set of other packages, each of which depends on another set of packages. We consider extending semilattices to semilattice graphs to handle dependency management.
         
         A \emph{semilattice graph} consists of:
