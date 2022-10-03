@@ -123,15 +123,15 @@
                           t_n(x_{<n}, x_{<n} \vee y_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n})}
                           t_n(y_{<n}, x_{<n} \vee y_{<n})(y_n)) \\
                &\vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(z_n)  \\
-              =& t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(t_n(x_{<n}, x_{<n} \vee y_{<n})(x_n)) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
-               & t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(t_n(y_{<n}, x_{<n} \vee y_{<n})(y_n)) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+              =& (t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}) \circ t_n(x_{<n}, x_{<n} \vee y_{<n}))(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & (t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}) \circ t_n(y_{<n}, x_{<n} \vee y_{<n}))(y_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
                & t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(z_n)  \\
               =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
                & t_n(y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(y_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
                & t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(z_n)  \\
               =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
-               & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(t_n(y_{<n}, y_{<n} \vee z_{<n})(y_n)) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
-               & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(t_n(z_{<n}, y_{<n} \vee z_{<n})(z_n))  \\
+               & (t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}) \circ t_n(y_{<n}, y_{<n} \vee z_{<n}))(y_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & (t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}) \circ t_n(z_{<n}, y_{<n} \vee z_{<n}))(z_n)  \\
               =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
                & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(
                           t_n(y_{<n}, y_{<n} \vee z_{<n})(y_n) \vee_{l_n(y_{<n} \vee z_{<n})}
