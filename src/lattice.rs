@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
+use crate::tagged_mapping::TaggedMapping;
+
 pub enum LatLookup<G: LatGraph, T> {
     Done(Result<T, String>),
     Lookup(G::Key, Box<dyn Send + Sync + FnOnce(&G, G::Value) -> LatLookup<G, T>>)
@@ -26,11 +28,7 @@ impl<G: LatGraph, T> LatLookup<G, T> {
     }
 }
 
-pub trait LatGraph : Send + Sync + Sized {
-
-    type Key : Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned;
-
-    type Value : Eq + Clone + Send + Sync + Serialize + DeserializeOwned;
+pub trait LatGraph : Send + Sync + Sized + TaggedMapping {
 
     type LatDeps : Send + Sync + Clone;
 
@@ -40,17 +38,16 @@ pub trait LatGraph : Send + Sync + Sized {
         key1.partial_cmp(key2).ok_or("Keys are not comparable".to_string())
     }
 
-    fn lat_deps(&self, key: &Self::Key) -> LatLookup<Self, Self::LatDeps>;
+    fn check_elem(&self, key: &Self::Key, value: &Self::Value) -> LatLookup<Self, ()>;
 
-    fn value_deps(&self, key: &Self::Key, value: &Self::Value, lat_deps: Self::LatDeps) -> LatLookup<Self, Self::ValueDeps>;
+    fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value) -> LatLookup<Self, Self::Value>;
 
-    fn check_elem(&self, key: &Self::Key, value: &Self::Value, deps: Self::ValueDeps) -> Result<(), String>;
+    fn bottom(&self, key: &Self::Key, deps: Self::LatDeps) -> LatLookup<Self, ()>;
 
-    fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value, deps1: Self::ValueDeps, deps2: Self::ValueDeps) -> Result<Self::Value, String>;
+    fn transport(&self, key: &Self::Key, value: &Self::Value) -> LatLookup<Self, LatLookup<Self, Self::Value>>;
+}
 
-    fn bottom(&self, key: &Self::Key, deps: Self::LatDeps) -> Result<Self::Value, String>;
-
-    fn transport(&self, key: &Self::Key, value: &Self::Value, old_deps: Self::ValueDeps, new_deps: Self::ValueDeps) -> Result<Self::Value, String>;
+pub struct TaggedLatGraph {
 }
 
 // pub struct SerializeLatGraph<'a, L: LatGraph>(&'a L);
