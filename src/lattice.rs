@@ -154,7 +154,7 @@ where L::Key: IsEnum, L::Value: IsEnum {
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-enum Either<A, B> {
+pub enum Either<A, B> {
     Left(A),
     Right(B),
 }
@@ -169,13 +169,13 @@ pub trait DepLatGraph<L: LatGraph> : Send + Sync {
 
     fn value_deps(&self, key: &Self::Key, value: &Self::Value) -> Result<BTreeSet<Either<L::Key, Self::Key>>, String>;
 
-    fn check_elem(&self, key: &Self::Key, value: &Self::Value, deps: &BTreeMap<Either<L::Key, Self::Key>, Either<L::Value, Self::Value>>) -> Result<(), String>;
+    fn check_elem(&self, key: &Self::Key, value: &Self::Value, ldeps: &BTreeMap<L::Key, L::Value>, rdeps: &BTreeMap<Self::Key, Self::Value>) -> Result<(), String>;
 
-    fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value, deps: &BTreeMap<Either<L::Key, Self::Key>, Either<L::Value, Self::Value>>) -> Result<Self::Value, String>;
+    fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value, ldeps: &BTreeMap<L::Key, L::Value>, rdeps: &BTreeMap<Self::Key, Self::Value>) -> Result<Self::Value, String>;
 
-    fn bottom(&self, key: &Self::Key, deps: &BTreeMap<Either<L::Key, Self::Key>, Either<L::Value, Self::Value>>) -> Result<Self::Value, String>;
+    fn bottom(&self, key: &Self::Key, ldeps: &BTreeMap<L::Key, L::Value>, rdeps: &BTreeMap<Self::Key, Self::Value>) -> Result<Self::Value, String>;
 
-    fn transport(&self, key: &Self::Key, value: &Self::Value, old_deps: &BTreeMap<Either<L::Key, Self::Key>, Either<L::Value, Self::Value>>, new_deps: &BTreeMap<Either<L::Key, Self::Key>, Either<L::Value, Self::Value>>) -> Result<Self::Value, String>;
+    fn transport(&self, key: &Self::Key, value: &Self::Value, old_ldeps: &BTreeMap<L::Key, L::Value>, old_rdeps: &BTreeMap<Self::Key, Self::Value>, new_ldeps: &BTreeMap<L::Key, L::Value>, new_rdeps: &BTreeMap<Self::Key, Self::Value>) -> Result<Self::Value, String>;
 }
 
 struct TotalLatGraph<L: LatGraph, D: DepLatGraph<L>> {
@@ -190,15 +190,18 @@ impl<L: LatGraph, D: DepLatGraph<L>> TotalLatGraph<L, D> {
     fn deps_to_left(deps: &BTreeSet<L::Key>) -> BTreeSet<Either<L::Key, D::Key>> {
         deps.iter().map(|k| Either::Left(k.clone())).collect()
     }
-    fn deps_from_left(deps: &BTreeMap<Either<L::Key, D::Key>, Either<L::Value, D::Value>>) -> Result<BTreeMap<L::Key, L::Value>, String> {
-        let mut res = BTreeMap::new();
+
+    fn separate_deps(deps: &BTreeMap<Either<L::Key, D::Key>, Either<L::Value, D::Value>>) -> Result<(BTreeMap<L::Key, L::Value>, BTreeMap<D::Key, D::Value>), String> {
+        let mut ldeps = BTreeMap::new();
+        let mut rdeps = BTreeMap::new();
         for (k, v) in deps {
             match (k, v) {
-                (Either::Left(k), Either::Left(v)) => { res.insert(k.clone(), v.clone()); },
-                _ => { return Err(format!("expected left key and value")); },
+                (Either::Left(k), Either::Left(v)) => { ldeps.insert(k.clone(), v.clone()); },
+                (Either::Right(k), Either::Right(v)) => { rdeps.insert(k.clone(), v.clone()); },
+                _ => { return Err(format!("mismatched key and value")); },
             }
         }
-        Ok(res)
+        Ok((ldeps, rdeps))
     }
 }
 
@@ -223,30 +226,35 @@ impl<L: LatGraph, D: DepLatGraph<L>> LatGraph for TotalLatGraph<L, D> {
     }
 
     fn check_elem(&self, key: &Self::Key, value: &Self::Value, deps: &BTreeMap<Self::Key, Self::Value>) -> Result<(), String> {
+        let (ldeps, rdeps) = Self::separate_deps(deps)?;
         match (key, value) {
-            (Either::Left(k), Either::Left(v)) => self.lat.check_elem(k, v, &Self::deps_from_left(deps)?),
-            (Either::Right(k), Either::Right(v)) => self.dep.check_elem(k, v, deps),
+            (Either::Left(k), Either::Left(v)) => self.lat.check_elem(k, v, &ldeps),
+            (Either::Right(k), Either::Right(v)) => self.dep.check_elem(k, v, &ldeps, &rdeps),
             _ => Err("key/value mismatch".to_string()),
         }
     }
 
     fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value, deps: &BTreeMap<Self::Key, Self::Value>) -> Result<Self::Value, String> {
+        let (ldeps, rdeps) = Self::separate_deps(deps)?;
         match (key, value1, value2) {
-            (Either::Left(k), Either::Left(v1), Either::Left(v2)) => Ok(Either::Left(self.lat.join(k, v1, v2, &Self::deps_from_left(deps)?)?)),
-            (Either::Right(k), Either::Right(v1), Either::Right(v2)) => Ok(Either::Right(self.dep.join(k, v1, v2, deps)?)),
+            (Either::Left(k), Either::Left(v1), Either::Left(v2)) => Ok(Either::Left(self.lat.join(k, v1, v2, &ldeps)?)),
+            (Either::Right(k), Either::Right(v1), Either::Right(v2)) => Ok(Either::Right(self.dep.join(k, v1, v2, &ldeps, &rdeps)?)),
             _ => Err("key/value mismatch".to_string()),
         }
     }
     fn bottom(&self, key: &Self::Key, deps: &BTreeMap<Self::Key, Self::Value>) -> Result<Self::Value, String> {
+        let (ldeps, rdeps) = Self::separate_deps(deps)?;
         match key {
-            Either::Left(k) => Ok(Either::Left(self.lat.bottom(k, &Self::deps_from_left(deps)?)?)),
-            Either::Right(k) => Ok(Either::Right(self.dep.bottom(k, deps)?)),
+            Either::Left(k) => Ok(Either::Left(self.lat.bottom(k, &ldeps)?)),
+            Either::Right(k) => Ok(Either::Right(self.dep.bottom(k, &ldeps, &rdeps)?)),
         }
     }
     fn transport(&self, key: &Self::Key, value: &Self::Value, old_deps: &BTreeMap<Self::Key, Self::Value>, new_deps: &BTreeMap<Self::Key, Self::Value>) -> Result<Self::Value, String> {
+        let (old_ldeps, old_rdeps) = Self::separate_deps(old_deps)?;
+        let (new_ldeps, new_rdeps) = Self::separate_deps(new_deps)?;
         match (key, value) {
-            (Either::Left(k), Either::Left(v)) => Ok(Either::Left(self.lat.transport(k, v, &Self::deps_from_left(old_deps)?, &Self::deps_from_left(new_deps)?)?)),
-            (Either::Right(k), Either::Right(v)) => Ok(Either::Right(self.dep.transport(k, v, old_deps, new_deps)?)),
+            (Either::Left(k), Either::Left(v)) => Ok(Either::Left(self.lat.transport(k, v, &old_ldeps, &new_ldeps)?)),
+            (Either::Right(k), Either::Right(v)) => Ok(Either::Right(self.dep.transport(k, v, &old_ldeps, &old_rdeps, &new_ldeps, &new_rdeps)?)),
             _ => Err("key/value mismatch".to_string()),
         }
     }
