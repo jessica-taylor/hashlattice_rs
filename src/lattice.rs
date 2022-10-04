@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, BTreeMap};
 
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
 // function from D to semilattice
 pub trait SemiL : Send + Sync {
@@ -26,7 +26,39 @@ pub trait SemiL : Send + Sync {
     fn leq(&self, a: &Self::Elem, b: &Self::Elem) -> bool {
         self.join(a, b) == *b
     }
+}
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
+enum Either<A, B> {
+    Left(A),
+    Right(B),
+}
+
+impl<L1 : SemiL, L2: SemiL> SemiL for Either<L1, L2> {
+    type Elem = Either<L1::Elem, L2::Elem>;
+
+    fn is_elem(&self, e: &Self::Elem) -> bool {
+        match (self, e) {
+            (Either::Left(l1), Either::Left(e)) => l1.is_elem(e),
+            (Either::Right(l2), Either::Right(e)) => l2.is_elem(e),
+            _ => false,
+        }
+    }
+
+    fn join(&self, a: &Self::Elem, b: &Self::Elem) -> Self::Elem {
+        match (self, a, b) {
+            (Either::Left(l1), Either::Left(a), Either::Left(b)) => Either::Left(l1.join(a, b)),
+            (Either::Right(l2), Either::Right(a), Either::Right(b)) => Either::Right(l2.join(a, b)),
+            _ => panic!("join: not an element"),
+        }
+    }
+
+    fn bottom(&self) -> Self::Elem {
+        match self {
+            Either::Left(l1) => Either::Left(l1.bottom()),
+            Either::Right(l2) => Either::Right(l2.bottom()),
+        }
+    }
 }
 
 // function from D to semilattice fibration
@@ -62,3 +94,4 @@ pub trait SemiLUniverse<L: SemiL> : Send + Sync + Sized {
 pub trait SemiLUniverseSpec<L: SemiL, U: SemiLUniverse<L, Spec = Self>> : SemiL + Sized {
     fn elem_at(&self, lat: &L, i: usize) -> Result<<<U::Fib as SemiLFibration<Self>>::Lat as SemiL>::Elem, String>;
 }
+
