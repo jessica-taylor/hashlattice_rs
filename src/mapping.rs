@@ -10,7 +10,17 @@ pub trait LatMapping<L: LatGraph> : Send + Sync {
 
     fn get_latgraph(&self) -> &L;
 
-    async fn get_lattice_max(self: Arc<Self>, key: L::K) -> Result<L::V, String>;
+    async fn get_lattice_max(self: Arc<Self>, key: L::K) -> Result<(L::V, HashCode), String>;
+}
+
+#[async_trait]
+pub trait LatMappingExt<L: LatGraph> : LatMapping<L> {
+
+    async fn dependencies(self: Arc<Self>, key: L::K) -> Result<BTreeSet<L::K>, String>;
+
+    async fn join(self: Arc<Self>, key: L::K, v1: L::V, v2: L::V) -> Result<L::V, String>;
+
+    async fn autofill(self: Arc<Self>, key: L::K) -> Result<L::V, String>;
 }
 
 #[async_trait]

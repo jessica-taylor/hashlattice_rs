@@ -4,21 +4,25 @@ use std::sync::Arc;
 
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
-pub enum LatResult<G: LatGraph, D, T> {
+pub enum LatLookup<G: LatGraph, T> {
     Done(Result<T, String>),
-    Lookup(D, G::Key, Box<dyn Send + Sync + FnOnce(&G, G::Value) -> LatResult<G, D, T>>)
+    Lookup(G::Key, Box<dyn Send + Sync + FnOnce(&G, G::Value) -> LatLookup<G, T>>)
 }
 
-impl<G: LatGraph + 'static, D: 'static, T: 'static> LatResult<G, D, T> {
-    pub fn and_then<U>(self, f: impl 'static + Send + Sync + FnOnce(T) -> LatResult<G, D, U>) -> LatResult<G, D, U> {
-        match self {
-            LatResult::Done(Ok(t)) => f(t),
-            LatResult::Done(Err(e)) => LatResult::Done(Err(e)),
-            LatResult::Lookup(key, dep, g) => LatResult::Lookup(key, dep, Box::new(move |lat, value| g(lat, value).and_then(f)))
+impl<G: LatGraph, T> LatLookup<G, T> {
+    fn to_set(self, lat: &G, mut lookup: impl FnMut(G::Key) -> Result<G::Value, String>) -> Result<(BTreeSet<G::Key>, T), String> {
+        let mut this = self;
+        let set = BTreeSet::new();
+        loop {
+            match this {
+                LatLookup::Done(Err(e)) => { return Err(e); },
+                LatLookup::Done(Ok(res)) => { return Ok((set, res)); },
+                LatLookup::Lookup(k, f) => {
+                    let v = lookup(k)?;
+                    this = f(lat, v);
+                }
+            }
         }
-    }
-    pub fn map<U>(self, f: impl 'static + Send + Sync + FnOnce(T) -> U) -> LatResult<G, D, U> {
-        self.and_then(move |t| LatResult::Done(Ok(f(t))))
     }
 }
 
@@ -28,18 +32,25 @@ pub trait LatGraph : Send + Sync + Sized {
 
     type Value : Eq + Clone + Send + Sync + Serialize + DeserializeOwned;
 
+    type LatDeps : Send + Sync + Clone;
+
+    type ValueDeps : Send + Sync;
+
     fn cmp_keys(&self, key1: &Self::Key, key2: &Self::Key) -> Result<Ordering, String> {
         key1.partial_cmp(key2).ok_or("Keys are not comparable".to_string())
     }
 
-    fn check_elem(&self, key: &Self::Key, value: &Self::Value) -> LatResult<Self, (), ()>;
+    fn lat_deps(&self, key: &Self::Key) -> LatLookup<Self, Self::LatDeps>;
 
-    fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value) -> LatResult<Self, (), Self::Value>;
+    fn value_deps(&self, key: &Self::Key, value: &Self::Value, lat_deps: Self::LatDeps) -> LatLookup<Self, Self::ValueDeps>;
 
-    fn bottom(&self, key: &Self::Key) -> LatResult<Self, (), Self::Value>;
+    fn check_elem(&self, key: &Self::Key, value: &Self::Value, deps: Self::ValueDeps) -> Result<(), String>;
 
-    fn transport(&self, key: &Self::Key, value: &Self::Value) -> LatResult<Self, bool, Self::Value>;
+    fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value, deps1: Self::ValueDeps, deps2: Self::ValueDeps) -> Result<Self::Value, String>;
 
+    fn bottom(&self, key: &Self::Key, deps: Self::LatDeps) -> Result<Self::Value, String>;
+
+    fn transport(&self, key: &Self::Key, value: &Self::Value, old_deps: Self::ValueDeps, new_deps: Self::ValueDeps) -> Result<Self::Value, String>;
 }
 
 // pub struct SerializeLatGraph<'a, L: LatGraph>(&'a L);
