@@ -70,6 +70,9 @@ impl TaggedKey {
     pub fn new<M: TaggedMapping>(tag: Tag<M>, key: &M::Key) -> Self {
         Self { index: tag.index, key: rmp_serde::to_vec(key).unwrap() }
     }
+    pub fn get_index(&self) -> usize {
+        self.index
+    }
     pub fn get_as<M: TaggedMapping>(&self, tag: Tag<M>) -> Result<M::Key, String> {
         if self.index == tag.index {
             rmp_serde::from_slice(&self.key).map_err(|e| format!("{:?}", e))
@@ -88,6 +91,9 @@ pub struct TaggedValue {
 impl TaggedValue {
     pub fn new<M: TaggedMapping>(tag: Tag<M>, value: &M::Value) -> Self {
         Self { index: tag.index, value: rmp_serde::to_vec(value).unwrap() }
+    }
+    pub fn get_index(&self) -> usize {
+        self.index
     }
     pub fn get_as<M: TaggedMapping>(&self, tag: Tag<M>) -> Result<M::Value, String> {
         if self.index == tag.index {

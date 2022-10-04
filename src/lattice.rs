@@ -4,14 +4,14 @@ use std::sync::Arc;
 
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
-use crate::tagged_mapping::TaggedMapping;
+use crate::tagged_mapping::{TaggedMapping, Tag, TaggedKey, TaggedValue};
 
 pub enum LatLookup<G: LatGraph, T> {
     Done(Result<T, String>),
     Lookup(G::Key, Box<dyn Send + Sync + FnOnce(&G, G::Value) -> LatLookup<G, T>>)
 }
 
-impl<G: LatGraph, T> LatLookup<G, T> {
+impl<G: LatGraph + 'static, T : 'static> LatLookup<G, T> {
     fn to_set(self, lat: &G, mut lookup: impl FnMut(G::Key) -> Result<G::Value, String>) -> Result<(BTreeSet<G::Key>, T), String> {
         let mut this = self;
         let set = BTreeSet::new();
@@ -26,13 +26,32 @@ impl<G: LatGraph, T> LatLookup<G, T> {
             }
         }
     }
+    fn and_then<T2>(self, f: impl 'static + Send + Sync + FnOnce(T) -> LatLookup<G, T2>) -> LatLookup<G, T2> {
+        match self {
+            LatLookup::Done(Err(e)) => { LatLookup::Done(Err(e)) },
+            LatLookup::Done(Ok(res)) => { f(res) },
+            LatLookup::Lookup(k, g) => {
+                LatLookup::Lookup(k, Box::new(move |lat, v| g(lat, v).and_then(f)))
+            }
+        }
+    }
+    fn map<T2>(self, f: impl 'static + Send + Sync + FnOnce(T) -> T2) -> LatLookup<G, T2> {
+        self.and_then(move |res| LatLookup::Done(Ok(f(res))))
+    }
+    fn map_latgraph<G2: LatGraph>(self, conv_g: impl 'static + Send + Sync + Fn(&G2) -> &G, conv_k: impl 'static + Send + Sync + Fn(G::Key) -> G2::Key, conv_v: impl 'static + Send + Sync + Fn(G2::Value) -> Result<G::Value, String>) -> LatLookup<G2, T> {
+        match self {
+            LatLookup::Done(res) => LatLookup::Done(res),
+            LatLookup::Lookup(k, f) => LatLookup::Lookup(conv_k(k), Box::new(move |g, v| {
+                match conv_v(v) {
+                    Err(e) => LatLookup::Done(Err(e)),
+                    Ok(v) => f(conv_g(g), v).map_latgraph(conv_g, conv_k, conv_v)
+                }
+            }))
+        }
+    }
 }
 
 pub trait LatGraph : Send + Sync + Sized + TaggedMapping {
-
-    type LatDeps : Send + Sync + Clone;
-
-    type ValueDeps : Send + Sync;
 
     fn cmp_keys(&self, key1: &Self::Key, key2: &Self::Key) -> Result<Ordering, String> {
         key1.partial_cmp(key2).ok_or("Keys are not comparable".to_string())
@@ -42,12 +61,78 @@ pub trait LatGraph : Send + Sync + Sized + TaggedMapping {
 
     fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value) -> LatLookup<Self, Self::Value>;
 
-    fn bottom(&self, key: &Self::Key, deps: Self::LatDeps) -> LatLookup<Self, ()>;
+    fn bottom(&self, key: &Self::Key) -> LatLookup<Self, Self::Value>;
 
     fn transport(&self, key: &Self::Key, value: &Self::Value) -> LatLookup<Self, LatLookup<Self, Self::Value>>;
 }
 
-pub struct TaggedLatGraph {
+pub struct TaggedLatGraph<G: LatGraph> {
+    latgraph: G,
+    tag: Tag<G>,
+}
+
+impl<G: LatGraph + 'static> TaggedLatGraph<G> {
+    fn map_lookup<T: 'static>(tag: Tag<G>, lookup: LatLookup<G, T>) -> LatLookup<TaggedLatGraph<G>, T> {
+        lookup.map_latgraph(move |g: &Self| &g.latgraph, move |k| TaggedKey::new(tag, &k), move |v| v.get_as(tag))
+    }
+}
+
+impl<G: LatGraph> TaggedMapping for TaggedLatGraph<G> {
+    type Key = TaggedKey;
+    type Value = TaggedValue;
+}
+
+impl<G: LatGraph + 'static> LatGraph for TaggedLatGraph<G> {
+    fn cmp_keys(&self, key1: &Self::Key, key2: &Self::Key) -> Result<Ordering, String> {
+        let ix_cmp = key1.get_index().cmp(&key2.get_index());
+        if ix_cmp != Ordering::Equal {
+            return Ok(ix_cmp);
+        }
+        self.latgraph.cmp_keys(&key1.get_as(self.tag)?, &key2.get_as(self.tag)?)
+    }
+
+    fn check_elem(&self, key: &Self::Key, value: &Self::Value) -> LatLookup<Self, ()> {
+        match key.get_as(self.tag) {
+            Err(e) => LatLookup::Done(Err(e)),
+            Ok(k) => match value.get_as(self.tag) {
+                Err(e) => LatLookup::Done(Err(e)),
+                Ok(v) => Self::map_lookup(self.tag, self.latgraph.check_elem(&k, &v))
+            }
+        }
+    }
+
+    fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value) -> LatLookup<Self, Self::Value> {
+        let tag = self.tag;
+        match key.get_as(tag) {
+            Err(e) => LatLookup::Done(Err(e)),
+            Ok(k) => match value1.get_as(tag) {
+                Err(e) => LatLookup::Done(Err(e)),
+                Ok(v1) => match value2.get_as(tag) {
+                    Err(e) => LatLookup::Done(Err(e)),
+                    Ok(v2) => Self::map_lookup(tag, self.latgraph.join(&k, &v1, &v2)).map(move |v| TaggedValue::new(tag, &v))
+                }
+            }
+        }
+    }
+
+    fn bottom(&self, key: &Self::Key) -> LatLookup<Self, Self::Value> {
+        let tag = self.tag;
+        match key.get_as(tag) {
+            Err(e) => LatLookup::Done(Err(e)),
+            Ok(k) => Self::map_lookup(tag, self.latgraph.bottom(&k)).map(move |v| TaggedValue::new(tag, &v))
+        }
+    }
+
+    fn transport(&self, key: &Self::Key, value: &Self::Value) -> LatLookup<Self, LatLookup<Self, Self::Value>> {
+        let tag = self.tag;
+        match key.get_as(tag) {
+            Err(e) => LatLookup::Done(Err(e)),
+            Ok(k) => match value.get_as(tag) {
+                Err(e) => LatLookup::Done(Err(e)),
+                Ok(v) => Self::map_lookup(tag, self.latgraph.transport(&k, &v)).map(move |lookup| Self::map_lookup(tag, lookup).map(move |v| TaggedValue::new(tag, &v)))
+            }
+        }
+    }
 }
 
 // pub struct SerializeLatGraph<'a, L: LatGraph>(&'a L);
