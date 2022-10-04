@@ -67,7 +67,7 @@ pub trait SemiLFibration<L : SemiL> : Send + Sync {
 
     fn lattice(&self, lat: &L, x: &L::Elem) -> Self::Lat;
 
-    fn transport(&self, lat: &L, x: &L::Elem, y: &L::Elem, a: <Self::Lat as SemiL>::Elem) -> <Self::Lat as SemiL>::Elem;
+    fn transport(&self, lat: &L, x: &L::Elem, y: &L::Elem, a: &<Self::Lat as SemiL>::Elem) -> <Self::Lat as SemiL>::Elem;
 
     // laws:
     //   assume lat.is_elem(x), lat.is_elem(y), lat.is_elem(z)
@@ -83,6 +83,33 @@ pub trait SemiLFibration<L : SemiL> : Send + Sync {
     //         self.transport(lat, x, y, a), self.transport(lat, x, y, b))
 }
 
+struct SemiLTot<'a, L: SemiL, F: SemiLFibration<L>> {
+    lat: &'a L,
+    fib: &'a F,
+}
+
+impl<'a, L: SemiL, F: SemiLFibration<L>> SemiL for SemiLTot<'a, L, F> {
+    type Elem = (L::Elem, <F::Lat as SemiL>::Elem);
+
+    fn is_elem(&self, e: &Self::Elem) -> bool {
+        self.lat.is_elem(&e.0) && self.fib.lattice(self.lat, &e.0).is_elem(&e.1)
+    }
+
+    fn join(&self, a: &Self::Elem, b: &Self::Elem) -> Self::Elem {
+        let c0 = self.lat.join(&a.0, &b.0);
+        let ta1 = self.fib.transport(self.lat, &a.0, &c0, &a.1);
+        let tb1 = self.fib.transport(self.lat, &b.0, &c0, &b.1);
+        let lat = self.fib.lattice(self.lat, &c0);
+        (c0, lat.join(&ta1, &tb1))
+    }
+
+    fn bottom(&self) -> Self::Elem {
+        let bot = self.lat.bottom();
+        let lat_bot = self.fib.lattice(self.lat, &bot).bottom();
+        (bot, lat_bot)
+    }
+}
+
 pub trait SemiLUniverse<L: SemiL> : Send + Sync + Sized {
     type Key : Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned;
 
@@ -90,6 +117,7 @@ pub trait SemiLUniverse<L: SemiL> : Send + Sync + Sized {
 
     type Fib : SemiLFibration<Self::Spec>;
 
+    // must only query spec on keys < key
     fn fibration(&self, lat: &L, key: &Self::Key, spec: &Self::Spec) -> Self::Fib;
 }
 
@@ -106,6 +134,7 @@ pub trait SemiLMultiverse<L: SemiL, U: SemiLUniverse<Self::MultiSpec>> : Send + 
 
     type MultiSpec : SemiLMultiverseSpec<L, U, Self>;
 
+    // must only query spec on keys < key
     fn universe(&self, lat: &L, key: &Self::MultiKey, spec: &Self::MultiSpec) -> U;
 }
 
