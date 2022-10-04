@@ -84,14 +84,17 @@ pub trait SemiLFibration<L : SemiL> : Send + Sync {
 }
 
 pub trait SemiLUniverse<L: SemiL> : Send + Sync + Sized {
+    type Key : Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned;
+
     type Spec : SemiLUniverseSpec<L, Self>;
 
     type Fib : SemiLFibration<Self::Spec>;
 
-    fn fibration(&self, lat: &L, spec: &Self::Spec) -> Self::Fib;
+    fn fibration(&self, lat: &L, key: &Self::Key, spec: &Self::Spec) -> Self::Fib;
 }
 
 pub trait SemiLUniverseSpec<L: SemiL, U: SemiLUniverse<L, Spec = Self>> : SemiL + Sized {
-    fn elem_at(&self, lat: &L, i: usize) -> Result<<<U::Fib as SemiLFibration<Self>>::Lat as SemiL>::Elem, String>;
+
+    fn elem_at(&self, lat: &L, key: &U::Key) -> Result<<<U::Fib as SemiLFibration<Self>>::Lat as SemiL>::Elem, String>;
 }
 
