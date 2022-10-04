@@ -163,9 +163,19 @@
 
     \section{Semilattice Graphs}
 
-      In terms of implementation, it is by default infeasible to construct an element of the semilattice $L_{0, \omega}$, as it is infinite. To ameliorate this problem, we consider semilattices with a bottom element $\bot$ satisfying $\bot \vee x = x$ for each $x$ in the semilattice. We write $\mathrm{Semilattice}_\bot$ for the type of semilattices with $\bot$; $\mathrm{SemiFibration}_\bot(L)$ for the type of bottom-preserving semilattice fibrations on $L : \mathrm{Semilattice}_\bot$; and $\mathrm{SemiTot}_\bot(L, l, t) : \mathrm{Semilattice}_\bot$ for the total space the semilattice $L : \mathrm{Semilattice}_\bot$ and fibration $(l, t) : \mathrm{SemiFibration}_\bot$.
+      In terms of implementation, it is by default infeasible to construct an element of the semilattice $L_{0, \omega}$, as it is infinite. To ameliorate this problem, we consider semilattices with a bottom element $\bot$ satisfying $\bot \vee x = x$ for each $x$ in the semilattice. We write $\mathrm{Semilattice}_\bot$ for the type of semilattices with $\bot$; $\mathrm{SemiLFibration}_\bot(L)$ for the type of bottom-preserving semilattice fibrations on $L : \mathrm{Semilattice}_\bot$; and $\mathrm{SemiLTot}_\bot(L, l, t) : \mathrm{Semilattice}_\bot$ for the total space the semilattice $L : \mathrm{Semilattice}_\bot$ and fibration $(l, t) : \mathrm{SemiLFibration}_\bot$.
 
-      Using the above definition of semilattice universes, we can now explicitly represent elements of $L_{u, n}$ for which only a finite number of entries are not $\bot$. Joins are straightforward since if one element of the joined universe structure is $\bot$, the join equals the other element.
+      Using the above definition of semilattice universes, we can now explicitly represent elements of $L_{u, n}$ for which only a finite number of entries are not $\bot$. Joins are straightforward since if one element of the joined universe structure is $\bot$, the join equals the other element. The bottoms of the total space and $\omega$ total spaces are trivial, containing only $\bot$.
+
+      Let $K$ be a countable, well-ordered set of keys whose ordinal is no more than $\omega^2$. Let $V$ be a set of values. Since keys correspond with ordinals in $\omega^2$, we can write any key as $u\omega + n$; let $u(k)$ and $n(k)$ be $u$ and $n$ in this term respectively. We define a \emph{semilattice graph} to consist of:
+      \begin{align*}
+        L_{0, 0} &:= \{ \bot \} \\
+        (l_k, t_k) &: \mathrm{SemiLFibration}_\bot(L_{u(k), n(k)}) & \text{ for each $k \in K$ } \\
+        L_{u, n} &:= \mathrm{SemiLTot}_\bot(L_{u, n-1}, l_{u, n}, t_{u, n})    & \text{ for natural $0 \leq u < n_u$, $n \geq 1$ } \\
+        L_{u, 0} &:= L_{u-1, \omega} & \text{ for natural $1 \leq u < n_u$ }
+      \end{align*}
+
+      Note that each key corresponds to a semilattice fibration from a multiverse containing lower keys.
 
     \section{Semilattice Graphs}
 
@@ -243,67 +253,5 @@
               &= g(k)
             \end{align*}
         \end{itemize}
-
-    \section{Autofills}
-
-        Mappings may be infinite in general, and even finite ones contain a large number of keys. It is therefore computationally infeasible to store a mapping as a set of $K \times V$ pairs. Accordingly, we define \emph{autofills} to fill in lattice values automatically from a set of other values.
-
-
-        % Define $d^*(k, g) := \{k\} \cup \bigcup_{k' \in d(k, g(k))} d^*(k', g)$, the transitive closure of $d$, where $g$ is a mapping. The recursion is well-founded (and $d^*(k, g)$ is finite) because $d$ is well-founded.
-
-        % Note that $d^*(k, g_1 \vee g_2) \subseteq d^*(k, g_1) \cup d^*(k, g_2)$.
-
-        An \emph{autofill} for a semilattice graph consists of a dependency function $\hat{d}: K \rightarrow 2^V$ and an autofill function $a : \forall (k:K), \hat{d}(k) \rightarrow V$ that satisfy:
-
-        \begin{itemize}
-          \item
-            For each $k \in K, v \in V$, $\hat{d}(k) \subseteq d(k, v)$.
-          \item
-            $a(k, g_1) \vee_{k, g_1 \vee g_2} a(k, g_2) = a(k, g_1 \vee g_2)$; that is, the join of two autofill values on two mappings must be an autofill value on the joined mapping.
-        \end{itemize}
-
-        where we write $a(k, g) := a(k, g|_{\hat{d}(k)})$ for brevity.
-
-
-        A mapping $g : K \rightarrow V$ is an \emph{autofill mapping} if:
-        
-        \begin{itemize}
-          \item $g(k) = a(k, g)$ for all but a finite number of $k$ values.
-          \item $g(k) \vee_{k, g} a(k, g) = g(k)$ for all $k \in K$.
-        \end{itemize}
-
-
-        An autofill mapping can be represented as a finite set of $K \times V$ pairs; the remaining values are filled in automatically.
-
-        \begin{theorem}
-          Let $g_1, g_2 : K \rightarrow V$ be autofill mappings. Then $g_1 \vee g_2$ is an autofill mapping.
-        \end{theorem}
-
-        \begin{proof}
-
-          Whenever $g_1(k) = a(k, g_1)$ and $g_2(k) = a(k, g_2)$ (which is true for all but a finite number of $k$ values):
-           $$(g_1 \vee g_2)(k) = g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k) = a(k, g_1) \vee_{k, g_1 \vee g_2} a(k, g_2) = a(k, g_1 \vee g_2)$$
-
-          Additionally, for each $k \in K$:
-          \begin{align*}
-            (g_1 \vee g_2)(k) \vee_{k, (g_1 \vee g_2)} a(k, g) 
-            &= (g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k)) \vee_{k, (g_1 \vee g_2)} a(k, g) \\
-            &= g_1(k) \vee_{k, (g_1 \vee g_2)} (g_2(k) \vee_{k, (g_1 \vee g_2)} a(k, g)) \\
-            &= g_1(k) \vee_{k, (g_1 \vee g_2)} g_2(k) \\
-            &= (g_1 \vee g_2)(k)
-          \end{align*}
-        \end{proof}
-
-        For an autofill mapping $g$, we can define the \emph{concrete dependencies} of a key $k \in K$, which are a set of non-autofill keys of $g$ that are sufficient to derive $k$'s dependencies:
-
-        $$c(k, g) := \bigcup_{k' \in d(k, g(k))} \begin{cases}
-          \{k'\} & \text{if } g(k') \neq a(k, g) \\
-          c(k', g) & \text{otherwise}
-        \end{cases}  $$
-
-
-        Merging two mappings can be done recursively. Given mappings $g_1$ and $g_2$ and a key $k$, we compute the values $g_1(k), g_2(k)$ and their dependency sets $d(k, g_1(k)), d(k, g_2(k))$. We recursively merge $g_1$ and $g_2$ on each key in either dependency set, caching intermediate values to avoid repetated recursive calls. Finally, we compute the join and cache it in the database.
-
-        We may consider merging a mapping with a singleton mapping, which specifies the value of a single key and otherwise contains only default values. In this case, merging will change this value and all its direct or indirect dependencies. Merging with a singleton is similar to a ``database insert'', updating the value of a given key.
 
 \end{document}
