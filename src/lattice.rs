@@ -4,20 +4,20 @@ use std::sync::Arc;
 
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
-enum LatResult<G: LatGraph, T> {
+enum LatResult<G: LatGraph, D, T> {
     Done(Result<T, String>),
-    Lookup(G::Key, Box<dyn Send + Sync + FnOnce(&G, G::Value) -> LatResult<G, T>>)
+    Lookup(D, G::Key, Box<dyn Send + Sync + FnOnce(&G, G::Value) -> LatResult<G, D, T>>)
 }
 
-impl<G: LatGraph + 'static, T: 'static> LatResult<G, T> {
-    fn and_then<U>(self, f: impl 'static + Send + Sync + FnOnce(T) -> LatResult<G, U>) -> LatResult<G, U> {
+impl<G: LatGraph + 'static, D: 'static, T: 'static> LatResult<G, D, T> {
+    fn and_then<U>(self, f: impl 'static + Send + Sync + FnOnce(T) -> LatResult<G, D, U>) -> LatResult<G, D, U> {
         match self {
             LatResult::Done(Ok(t)) => f(t),
             LatResult::Done(Err(e)) => LatResult::Done(Err(e)),
-            LatResult::Lookup(key, g) => LatResult::Lookup(key, Box::new(move |lat, value| g(lat, value).and_then(f)))
+            LatResult::Lookup(key, dep, g) => LatResult::Lookup(key, dep, Box::new(move |lat, value| g(lat, value).and_then(f)))
         }
     }
-    fn map<U>(self, f: impl 'static + Send + Sync + FnOnce(T) -> U) -> LatResult<G, U> {
+    fn map<U>(self, f: impl 'static + Send + Sync + FnOnce(T) -> U) -> LatResult<G, D, U> {
         self.and_then(move |t| LatResult::Done(Ok(f(t))))
     }
 }
@@ -32,13 +32,13 @@ pub trait LatGraph : Send + Sync + Sized {
         key1.partial_cmp(key2).ok_or("Keys are not comparable".to_string())
     }
 
-    fn check_elem(&self, key: &Self::Key, value: &Self::Value) -> LatResult<Self, ()>;
+    fn check_elem(&self, key: &Self::Key, value: &Self::Value) -> LatResult<Self, (), ()>;
 
-    fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value) -> LatResult<Self, Self::Value>;
+    fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value) -> LatResult<Self, (), Self::Value>;
 
-    fn bottom(&self, key: &Self::Key) -> LatResult<Self, Self::Value>;
+    fn bottom(&self, key: &Self::Key) -> LatResult<Self, (), Self::Value>;
 
-    fn transport(&self, key: &Self::Key, value: &Self::Value) -> LatResult<Self, Self::Value>;
+    fn transport(&self, key: &Self::Key, value: &Self::Value) -> LatResult<Self, bool, Self::Value>;
 
 }
 
