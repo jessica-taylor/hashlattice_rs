@@ -170,12 +170,24 @@
       Let $K$ be a countable, well-ordered set of keys whose ordinal is no more than $\omega^2$. Let $V$ be a set of values. Since keys correspond with ordinals in $\omega^2$, we can write any key as $u\omega + n$; let $u(k)$ and $n(k)$ be $u$ and $n$ in this term respectively. We define a \emph{semilattice graph} to consist of:
       \begin{align*}
         L_{0, 0} &:= \{ \bot \} \\
-        (l_k, t_k) &: \mathrm{SemiLFibration}_\bot(L_{u(k), n(k)}) & \text{ for each $k \in K$ } \\
+        (l_k, t_k) &: \mathrm{SemiLFibration}_\bot(L_{u(k), n(k)-1}) & \text{ for each $k \in K$ } \\
+        l_k(x) \subseteq V &\text{ for each $k \in K$ and $x \in L_{u(k), n(k)}$} \\
         L_{u, n} &:= \mathrm{SemiLTot}_\bot(L_{u, n-1}, l_{u, n}, t_{u, n})    & \text{ for natural $0 \leq u < n_u$, $n \geq 1$ } \\
         L_{u, 0} &:= L_{u-1, \omega} & \text{ for natural $1 \leq u < n_u$ }
       \end{align*}
 
-      Note that each key corresponds to a semilattice fibration from a multiverse containing lower keys.
+      Note that each key corresponds to a semilattice fibration from a multiverse containing lower keys. We can re-interpret each element of the lattice $L_{u(k), n(k)}$ as mappings from keys less no higher than $k$ (written as $K_{\leq k}$) to $V$, which doesn't affect the semilattice structure. Accordingly, $l_k$ and $t_k$ are re-interpreted as taking mappings as arguments.
+
+      It is somewhat unwieldy to define $l_k$ and $t_k$ in implementation, since they depend on a possibly-infinite mapping. Accordingly, we define a notion of \emph{dependencies} of a function. For a key $k : K$ sets $X, Y$, a function $f : X \times (K_{<k} \rightarrow V) \rightarrow S$ has dependencies according to a function $d : X \rightarrow 2^{K_{<k}}$ when for any $x : X, m, m' : K_{<k} \rightarrow V$, if $m(k') = m'(k')$ for each $k' : d(x)$, we have $f(x, m) = f(x, m')$.
+
+      Now we apply this to $l_k, t_k$. Let $d_k^\star : 2^{K_{<k}}$ be a set of lattice dependencies, and $d_{k}(v) : 2^{K_{<k}}$ be a set of value dependencies for $v \in V$. We say $(l_k, d_k)$ have dependencies according to $d_{k, l}, d_{k, v}$ if:
+
+      \begin{itemize}
+        \item $\mathrm{Elems}(l_k(m))$ only depends on $m(k')$ for each $k' \in d_^\star$.
+        \item $\bot_{l_k(m})$ only depends on $m(k')$ for each $k' \in d_k^\star$.
+        \item $t_k(m, m')(v)$ only depends on $m(k')$ and $m'(k')$ for each $k' \in d_k^\star \cup d_k(v)$.
+        \item $x \vee_{l_k(m)} y$ only depends on $m(k')$ for each $k' \in d_k^\star \cup d_k(x) \cup d_k(y)$.
+      \end{itemize}
 
     \section{Semilattice Graphs}
 
