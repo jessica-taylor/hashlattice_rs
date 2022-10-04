@@ -16,6 +16,15 @@ pub struct Tag<M> {
     phantom: PhantomData<M>
 }
 
+impl<M: TaggedMapping> Tag<M> {
+    pub fn new(index: usize) -> Self {
+        Self {
+            index,
+            phantom: PhantomData
+        }
+    }
+}
+
 impl<M: TaggedMapping> Clone for Tag<M> {
     fn clone(&self) -> Self {
         Self {
@@ -55,7 +64,7 @@ impl TagRegistry {
     pub fn register<M: TaggedMapping>(&mut self) -> Tag<M> {
         let index = self.n_registered;
         self.n_registered += 1;
-        Tag { index, phantom: PhantomData }
+        Tag::new(index)
     }
 }
 
