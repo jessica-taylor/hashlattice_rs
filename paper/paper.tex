@@ -183,7 +183,7 @@
       Now we apply this to $l_k, t_k$. Let $d_k^\star : 2^{K_{<k}}$ be a set of lattice dependencies, and $d_{k}(v) : 2^{K_{<k}}$ be a set of value dependencies for $v \in V$. We say $(l_k, d_k)$ have dependencies according to $d_{k, l}, d_{k, v}$ if:
 
       \begin{itemize}
-        \item $\mathrm{Elems}(l_k(m))$ only depends on $m(k')$ for each $k' \in d_^\star$.
+        \item $\mathrm{Elems}(l_k(m))$ only depends on $m(k')$ for each $k' \in d_k^\star$.
         \item $\bot_{l_k(m})$ only depends on $m(k')$ for each $k' \in d_k^\star$.
         \item $t_k(m, m')(v)$ only depends on $m(k')$ and $m'(k')$ for each $k' \in d_k^\star \cup d_k(v)$.
         \item $x \vee_{l_k(m)} y$ only depends on $m(k')$ for each $k' \in d_k^\star \cup d_k(x) \cup d_k(y)$.
