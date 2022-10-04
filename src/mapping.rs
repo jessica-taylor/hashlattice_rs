@@ -14,16 +14,6 @@ pub trait LatMapping<L: LatGraph> : Send + Sync {
 }
 
 #[async_trait]
-pub trait LatMappingExt<L: LatGraph> : LatMapping<L> {
-
-    async fn dependencies(self: Arc<Self>, key: L::K) -> Result<BTreeSet<L::K>, String>;
-
-    async fn join(self: Arc<Self>, key: L::K, v1: L::V, v2: L::V) -> Result<L::V, String>;
-
-    async fn autofill(self: Arc<Self>, key: L::K) -> Result<L::V, String>;
-}
-
-#[async_trait]
 impl<L: LatGraph + 'static, M: LatMapping<L> + 'static> LatMappingExt<L> for M {
     async fn dependencies(self: Arc<Self>, key: L::K) -> Result<BTreeSet<L::K>, String> {
         let value = self.clone().get_lattice_max(key.clone()).await?;

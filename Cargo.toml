@@ -12,3 +12,7 @@ serde = {version = "1.0", features = ["derive"]}
 async-trait = "0.1"
 async-recursion = "1.0"
 async-mutex = "1.4"
+rand = "0.8"
+hex = "0.4"
+ed25519-dalek = {version = "1.0", features = ["serde"]}
+sha2 = "0.10"

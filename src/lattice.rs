@@ -4,20 +4,20 @@ use std::sync::Arc;
 
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
-enum LatResult<G: LatGraph, D, T> {
+pub enum LatResult<G: LatGraph, D, T> {
     Done(Result<T, String>),
     Lookup(D, G::Key, Box<dyn Send + Sync + FnOnce(&G, G::Value) -> LatResult<G, D, T>>)
 }
 
 impl<G: LatGraph + 'static, D: 'static, T: 'static> LatResult<G, D, T> {
-    fn and_then<U>(self, f: impl 'static + Send + Sync + FnOnce(T) -> LatResult<G, D, U>) -> LatResult<G, D, U> {
+    pub fn and_then<U>(self, f: impl 'static + Send + Sync + FnOnce(T) -> LatResult<G, D, U>) -> LatResult<G, D, U> {
         match self {
             LatResult::Done(Ok(t)) => f(t),
             LatResult::Done(Err(e)) => LatResult::Done(Err(e)),
             LatResult::Lookup(key, dep, g) => LatResult::Lookup(key, dep, Box::new(move |lat, value| g(lat, value).and_then(f)))
         }
     }
-    fn map<U>(self, f: impl 'static + Send + Sync + FnOnce(T) -> U) -> LatResult<G, D, U> {
+    pub fn map<U>(self, f: impl 'static + Send + Sync + FnOnce(T) -> U) -> LatResult<G, D, U> {
         self.and_then(move |t| LatResult::Done(Ok(f(t))))
     }
 }
