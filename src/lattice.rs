@@ -1,6 +1,6 @@
 use std::collections::{BTreeSet, BTreeMap};
 
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
 pub trait LatGraph : Send + Sync {
 
@@ -150,5 +150,104 @@ where L::Key: IsEnum, L::Value: IsEnum {
     fn transport(&self, key: &L::Key, value: &L::Value, old_deps: &BTreeMap<L::Key, L::Value>, new_deps: &BTreeMap<L::Key, L::Value>) -> Result<L::Value, String> {
         Self::check_branch_eq(key.get_branch(), value.get_branch())?;
         self.lat_by_branch(key.get_branch())?.transport(key, value, old_deps, new_deps)
+    }
+}
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+enum Either<A, B> {
+    Left(A),
+    Right(B),
+}
+
+pub trait DepLatGraph<L: LatGraph> : Send + Sync {
+
+    type Key : Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned;
+
+    type Value : Eq + Clone + Send + Sync + Serialize + DeserializeOwned;
+
+    fn lat_deps(&self, key: &Self::Key) -> Result<BTreeSet<Either<L::Key, Self::Key>>, String>;
+
+    fn value_deps(&self, key: &Self::Key, value: &Self::Value) -> Result<BTreeSet<Either<L::Key, Self::Key>>, String>;
+
+    fn check_elem(&self, key: &Self::Key, value: &Self::Value, deps: &BTreeMap<Either<L::Key, Self::Key>, Either<L::Value, Self::Value>>) -> Result<(), String>;
+
+    fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value, deps: &BTreeMap<Either<L::Key, Self::Key>, Either<L::Value, Self::Value>>) -> Result<Self::Value, String>;
+
+    fn bottom(&self, key: &Self::Key, deps: &BTreeMap<Either<L::Key, Self::Key>, Either<L::Value, Self::Value>>) -> Result<Self::Value, String>;
+
+    fn transport(&self, key: &Self::Key, value: &Self::Value, old_deps: &BTreeMap<Either<L::Key, Self::Key>, Either<L::Value, Self::Value>>, new_deps: &BTreeMap<Either<L::Key, Self::Key>, Either<L::Value, Self::Value>>) -> Result<Self::Value, String>;
+}
+
+struct TotalLatGraph<L: LatGraph, D: DepLatGraph<L>> {
+    lat: L,
+    dep: D,
+}
+
+impl<L: LatGraph, D: DepLatGraph<L>> TotalLatGraph<L, D> {
+    fn new(lat: L, dep: D) -> Self {
+        TotalLatGraph { lat, dep }
+    }
+    fn deps_to_left(deps: &BTreeSet<L::Key>) -> BTreeSet<Either<L::Key, D::Key>> {
+        deps.iter().map(|k| Either::Left(k.clone())).collect()
+    }
+    fn deps_from_left(deps: &BTreeMap<Either<L::Key, D::Key>, Either<L::Value, D::Value>>) -> Result<BTreeMap<L::Key, L::Value>, String> {
+        let mut res = BTreeMap::new();
+        for (k, v) in deps {
+            match (k, v) {
+                (Either::Left(k), Either::Left(v)) => { res.insert(k.clone(), v.clone()); },
+                _ => { return Err(format!("expected left key and value")); },
+            }
+        }
+        Ok(res)
+    }
+}
+
+impl<L: LatGraph, D: DepLatGraph<L>> LatGraph for TotalLatGraph<L, D> {
+    type Key = Either<L::Key, D::Key>;
+
+    type Value = Either<L::Value, D::Value>;
+
+    fn lat_deps(&self, key: &Self::Key) -> Result<BTreeSet<Self::Key>, String> {
+        match key {
+            Either::Left(k) => Ok(Self::deps_to_left(&self.lat.lat_deps(k)?)),
+            Either::Right(k) => self.dep.lat_deps(k)
+        }
+    }
+
+    fn value_deps(&self, key: &Self::Key, value: &Self::Value) -> Result<BTreeSet<Self::Key>, String> {
+        match (key, value) {
+            (Either::Left(k), Either::Left(v)) => Ok(Self::deps_to_left(&self.lat.value_deps(k, v)?)),
+            (Either::Right(k), Either::Right(v)) => self.dep.value_deps(k, v),
+            _ => Err("key/value mismatch".to_string()),
+        }
+    }
+
+    fn check_elem(&self, key: &Self::Key, value: &Self::Value, deps: &BTreeMap<Self::Key, Self::Value>) -> Result<(), String> {
+        match (key, value) {
+            (Either::Left(k), Either::Left(v)) => self.lat.check_elem(k, v, &Self::deps_from_left(deps)?),
+            (Either::Right(k), Either::Right(v)) => self.dep.check_elem(k, v, deps),
+            _ => Err("key/value mismatch".to_string()),
+        }
+    }
+
+    fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value, deps: &BTreeMap<Self::Key, Self::Value>) -> Result<Self::Value, String> {
+        match (key, value1, value2) {
+            (Either::Left(k), Either::Left(v1), Either::Left(v2)) => Ok(Either::Left(self.lat.join(k, v1, v2, &Self::deps_from_left(deps)?)?)),
+            (Either::Right(k), Either::Right(v1), Either::Right(v2)) => Ok(Either::Right(self.dep.join(k, v1, v2, deps)?)),
+            _ => Err("key/value mismatch".to_string()),
+        }
+    }
+    fn bottom(&self, key: &Self::Key, deps: &BTreeMap<Self::Key, Self::Value>) -> Result<Self::Value, String> {
+        match key {
+            Either::Left(k) => Ok(Either::Left(self.lat.bottom(k, &Self::deps_from_left(deps)?)?)),
+            Either::Right(k) => Ok(Either::Right(self.dep.bottom(k, deps)?)),
+        }
+    }
+    fn transport(&self, key: &Self::Key, value: &Self::Value, old_deps: &BTreeMap<Self::Key, Self::Value>, new_deps: &BTreeMap<Self::Key, Self::Value>) -> Result<Self::Value, String> {
+        match (key, value) {
+            (Either::Left(k), Either::Left(v)) => Ok(Either::Left(self.lat.transport(k, v, &Self::deps_from_left(old_deps)?, &Self::deps_from_left(new_deps)?)?)),
+            (Either::Right(k), Either::Right(v)) => Ok(Either::Right(self.dep.transport(k, v, old_deps, new_deps)?)),
+            _ => Err("key/value mismatch".to_string()),
+        }
     }
 }
