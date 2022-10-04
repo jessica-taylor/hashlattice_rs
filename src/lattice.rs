@@ -2,133 +2,63 @@ use std::collections::{BTreeSet, BTreeMap};
 
 use serde::{Serialize, de::DeserializeOwned};
 
-/// A graph where each item is a semilattice, which may depend on other lattice max values.
-pub trait LatGraph : Send + Sync {
+// function from D to semilattice
+pub trait SemiL : Send + Sync {
 
-    /// Keys identifying lattice value keys.
-    type K : Eq + Ord + Clone + Serialize + DeserializeOwned + Send + Sync;
+    type Elem : Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned;
 
-    /// The values themselves.
-    type V : Eq + Clone + Serialize + DeserializeOwned + Send + Sync;
+    fn is_elem(&self, e: &Self::Elem) -> bool;
 
-    /// Dependencies of a given key.
-    fn dependencies(&self, key: &Self::K, value: Option<&Self::V>) -> Result<BTreeSet<Self::K>, String>;
+    fn join(&self, a: &Self::Elem, b: &Self::Elem) -> Self::Elem;
 
-    /// Joins two values given dependencies.
-    fn join(&self, key: &Self::K, v1: &Self::V, v2: &Self::V, deps: &BTreeMap<Self::K, Self::V>) -> Result<Self::V, String>;
+    // laws:
+    //   assume self.is_elem(a), self.is_elem(b), self.is_elem(c)
+    //   self.join(a, a) = a
+    //   self.join(a, b) = self.join(b, a)
+    //   self.join(a, self.join(b, c)) = self.join(self.join(a, b), c)
 
-    /// The default element of the lattice.
-    fn autofill(&self, key: &Self::K, deps: &BTreeMap<Self::K, Self::V>) -> Result<Self::V, String>;
-}
+    fn bottom(&self) -> Self::Elem;
 
-pub struct SerializeLatGraph<'a, L: LatGraph>(&'a L);
-
-impl<'a, L: LatGraph> SerializeLatGraph<'a, L> {
-    pub fn new(l: &'a L) -> Self {
-        SerializeLatGraph(l)
-    }
-}
-
-impl<'a, L: LatGraph + 'static> LatGraph for SerializeLatGraph<'a, L> {
-
-    type K = Vec<u8>;
-
-    type V = Vec<u8>;
-
-    fn dependencies(&self, key: &Vec<u8>, value: Option<&Vec<u8>>) -> Result<BTreeSet<Vec<u8>>, String> {
-        let key = rmp_serde::from_slice(key).map_err(|e| format!("failed to deserialize key: {}", e))?;
-        let unser_deps = match value {
-            None => self.0.dependencies(&key, None)?,
-            Some(v) => {
-                let value = rmp_serde::from_slice(v).map_err(|e| format!("failed to deserialize value: {}", e))?;
-                self.0.dependencies(&key, Some(&value))?
-            }
-        };
-        let mut deps = BTreeSet::new();
-        for dep in unser_deps {
-            deps.insert(rmp_serde::to_vec(&dep).map_err(|e| format!("failed to serialize key: {}", e))?);
-        }
-        Ok(deps)
-    }
-
-    fn join(&self, key: &Self::K, v1: &Self::V, v2: &Self::V, deps: &BTreeMap<Self::K, Self::V>) -> Result<Self::V, String> {
-        let mut deps2 = BTreeMap::new();
-        for (k, v) in deps.into_iter() {
-            let k = rmp_serde::from_slice(&k).map_err(|e| format!("failed to deserialize key: {}", e))?;
-            let v = rmp_serde::from_slice(&v).map_err(|e| format!("failed to deserialize value: {}", e))?;
-            deps2.insert(k, v);
-        }
-        let key = rmp_serde::from_slice(key).map_err(|e| format!("failed to deserialize key: {}", e))?;
-        let v1 = rmp_serde::from_slice(v1).map_err(|e| format!("failed to deserialize value: {}", e))?;
-        let v2 = rmp_serde::from_slice(v2).map_err(|e| format!("failed to deserialize value: {}", e))?;
-        let v = self.0.join(&key, &v1, &v2, &deps2)?;
-        rmp_serde::to_vec_named(&v).map_err(|e| format!("failed to serialize value: {}", e))
-    }
-
-    fn autofill(&self, key: &Self::K, deps: &BTreeMap<Self::K, Self::V>) -> Result<Self::V, String> {
-        let key = rmp_serde::from_slice(key).map_err(|e| format!("failed to deserialize key: {}", e))?;
-        let mut deps2 = BTreeMap::new();
-        for (k, v) in deps.into_iter() {
-            let k = rmp_serde::from_slice(&k).map_err(|e| format!("failed to deserialize key: {}", e))?;
-            let v = rmp_serde::from_slice(&v).map_err(|e| format!("failed to deserialize value: {}", e))?;
-            deps2.insert(k, v);
-        }
-        let res = self.0.autofill(&key, &deps2)?;
-        rmp_serde::to_vec_named(&res).map_err(|e| format!("failed to serialize value: {}", e))
-    }
-}
-
-pub trait IsEnum {
-    fn get_branch(&self) -> usize;
-}
-
-pub struct EnumLatGraph<'a, L: LatGraph>(Vec<&'a L>);
-
-impl<'a, L: LatGraph> EnumLatGraph<'a, L> {
-    pub fn new(l: Vec<&'a L>) -> Self {
-        EnumLatGraph(l)
-    }
-}
-
-impl<'a, L: LatGraph + 'static> LatGraph for EnumLatGraph<'a, L>
-where L::K: IsEnum, L::V: IsEnum {
+    // laws:
+    //   self.is_elem(self.bottom(d))
+    //   self.join(a, self.bottom(d)) = a
     
-    type K = L::K;
-
-    type V = L::V;
-
-    fn dependencies(&self, key: &Self::K, value: Option<&Self::V>) -> Result<BTreeSet<Self::K>, String> {
-        let branch = key.get_branch();
-        match value {
-            None => {},
-            Some(v) => if v.get_branch() != branch {
-                return Err(format!("branch mismatch: {} != {}", branch, v.get_branch()));
-            }
-        }
-        if branch >= self.0.len() {
-            return Err(format!("branch {} out of range", branch));
-        }
-        self.0[branch].dependencies(key, value)
+    fn leq(&self, a: &Self::Elem, b: &Self::Elem) -> bool {
+        self.join(a, b) == *b
     }
 
-    fn join(&self, key: &Self::K, v1: &Self::V, v2: &Self::V, deps: &BTreeMap<Self::K, Self::V>) -> Result<Self::V, String> {
-        let branch = key.get_branch();
-        let branch2 = v1.get_branch();
-        let branch3 = v2.get_branch();
-        if branch != branch2 || branch != branch3 {
-            return Err(format!("key and value have different branches: {} vs {} vs {}", branch, branch2, branch3));
-        }
-        if branch >= self.0.len() {
-            return Err(format!("branch {} out of range", branch));
-        }
-        self.0[branch].join(key, v1, v2, deps)
-    }
+}
 
-    fn autofill(&self, key: &Self::K, deps: &BTreeMap<Self::K, Self::V>) -> Result<Self::V, String> {
-        let branch = key.get_branch();
-        if branch >= self.0.len() {
-            return Err(format!("branch {} out of range", branch));
-        }
-        self.0[branch].autofill(key, deps)
-    }
+// function from D to semilattice fibration
+pub trait SemiLFibration<L : SemiL> : Send + Sync {
+    type Lat : SemiL;
+
+    fn lattice(&self, lat: &L, x: &L::Elem) -> Self::Lat;
+
+    fn transport(&self, lat: &L, x: &L::Elem, y: &L::Elem, a: <Self::Lat as SemiL>::Elem) -> <Self::Lat as SemiL>::Elem;
+
+    // laws:
+    //   assume lat.is_elem(x), lat.is_elem(y), lat.is_elem(z)
+    //   assume lat.leq(x, y), lat.leq(y, z)
+    //   assume self.lattice(lat, x).is_elem(a),
+    //          self.lattice(lat, x).is_elem(b)
+    //
+    //   self.transport(lat, x, x, a) = a
+    //   self.transport(lat, x, y, self.transport(lat, x, z, a)) = self.transport(lat, x, z, self.transport(lat, y, z, a))
+    //   self.transport(x, y, self.lattice(lat, x).bottom()) = self.lattice(lat, y).bottom()
+    //   self.transport(lat, x, y, self.lattice(lat, x).join(a, b))
+    //     = self.lattice(lat, y).join(
+    //         self.transport(lat, x, y, a), self.transport(lat, x, y, b))
+}
+
+pub trait SemiLUniverse<L: SemiL> : Send + Sync + Sized {
+    type Spec : SemiLUniverseSpec<L, Self>;
+
+    type Fib : SemiLFibration<Self::Spec>;
+
+    fn fibration(&self, lat: &L, spec: &Self::Spec) -> Self::Fib;
+}
+
+pub trait SemiLUniverseSpec<L: SemiL, U: SemiLUniverse<L, Spec = Self>> : SemiL + Sized {
+    fn elem_at(&self, lat: &L, i: usize) -> Result<<<U::Fib as SemiLFibration<Self>>::Lat as SemiL>::Elem, String>;
 }
