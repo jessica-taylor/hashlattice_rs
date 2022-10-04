@@ -95,6 +95,23 @@ pub trait SemiLUniverse<L: SemiL> : Send + Sync + Sized {
 
 pub trait SemiLUniverseSpec<L: SemiL, U: SemiLUniverse<L, Spec = Self>> : SemiL + Sized {
 
-    fn elem_at(&self, lat: &L, key: &U::Key) -> Result<<<U::Fib as SemiLFibration<Self>>::Lat as SemiL>::Elem, String>;
+    fn base_elem(&self, lat: &L) -> L::Elem;
+
+    fn elem_at(&self, lat: &L, key: &U::Key) -> <<U::Fib as SemiLFibration<Self>>::Lat as SemiL>::Elem;
 }
 
+
+pub trait SemiLMultiverse<L: SemiL, U: SemiLUniverse<Self::MultiSpec>> : Send + Sync + Sized {
+    type MultiKey : Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned;
+
+    type MultiSpec : SemiLMultiverseSpec<L, U, Self>;
+
+    fn universe(&self, lat: &L, key: &Self::MultiKey, spec: &Self::MultiSpec) -> U;
+}
+
+pub trait SemiLMultiverseSpec<L: SemiL, U: SemiLUniverse<Self>, M: SemiLMultiverse<L, U, MultiSpec = Self>> : SemiL + Sized {
+
+    fn base_elem(&self, lat: &L) -> L::Elem;
+
+    fn universe_at(&self, lat: &L, mkey: &M::MultiKey) -> U;
+}
