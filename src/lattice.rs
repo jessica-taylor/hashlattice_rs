@@ -9,34 +9,36 @@ use crate::tagged_mapping::{TaggedMapping, Tag, TaggedKey, TaggedValue};
 
 pub enum LatLookup<K, V, T> {
     Done(T),
-    Lookup(K, Box<dyn Send + Sync + FnOnce(V) -> LatLookupResult<K, V, T>>)
+    Lookup(K, Box<dyn Send + Sync + FnOnce(&V) -> LatLookupResult<K, V, T>>)
 }
 
 type LatLookupResult<K, V, T> = Result<LatLookup<K, V, T>, String>;
 
 impl<K: Ord + 'static, V: 'static, T : 'static> LatLookup<K, V, T> {
-    fn to_set(self, mut lookup: impl FnMut(K) -> Result<V, String>) -> Result<(BTreeSet<K>, T), String> {
+    fn evaluate(self, mut lookup: impl FnMut(&K) -> Result<V, String>) -> Result<(BTreeMap<K, V>, T), String> {
         let mut this = self;
-        let set = BTreeSet::new();
+        let mut map = BTreeMap::new();
         loop {
             match this {
-                LatLookup::Done(res) => { return Ok((set, res)); },
+                LatLookup::Done(res) => { return Ok((map, res)); },
                 LatLookup::Lookup(k, f) => {
-                    let v = lookup(k)?;
-                    this = f(v)?;
+                    let v = lookup(&k)?;
+                    this = f(&v)?;
+                    map.insert(k, v);
                 }
             }
         }
     }
-    async fn to_set_async<F: Future<Output = Result<V, String>>>(self, mut lookup: impl Send + Sync + FnMut(K) -> F) -> Result<(BTreeSet<K>, T), String> {
+    async fn evaluate_async<F: Future<Output = Result<V, String>>>(self, mut lookup: impl Send + Sync + FnMut(&K) -> F) -> Result<(BTreeMap<K, V>, T), String> {
         let mut this = self;
-        let set = BTreeSet::new();
+        let mut map = BTreeMap::new();
         loop {
             match this {
-                LatLookup::Done(res) => { return Ok((set, res)); },
+                LatLookup::Done(res) => { return Ok((map, res)); },
                 LatLookup::Lookup(k, f) => {
-                    let v = lookup(k).await?;
-                    this = f(v)?;
+                    let v = lookup(&k).await?;
+                    this = f(&v)?;
+                    map.insert(k, v);
                 }
             }
         }
@@ -57,11 +59,11 @@ impl<K: Ord + 'static, V: 'static, T : 'static> LatLookup<K, V, T> {
             }
         }
     }
-    fn map_latgraph<K2: Ord + 'static, V2: 'static>(self, conv_k: impl 'static + Send + Sync + Fn(K) -> K2, conv_v: impl 'static + Send + Sync + Fn(V2) -> Result<V, String>) -> LatLookup<K2, V2, T> {
+    fn map_latgraph<K2: Ord + 'static, V2: 'static>(self, conv_k: impl 'static + Send + Sync + Fn(&K) -> K2, conv_v: impl 'static + Send + Sync + Fn(&V2) -> Result<V, String>) -> LatLookup<K2, V2, T> {
         match self {
             LatLookup::Done(res) => LatLookup::Done(res),
-            LatLookup::Lookup(k, f) => LatLookup::Lookup(conv_k(k), Box::new(move |v| {
-                Ok(f(conv_v(v)?)?.map_latgraph(conv_k, conv_v))
+            LatLookup::Lookup(k, f) => LatLookup::Lookup(conv_k(&k), Box::new(move |v| {
+                Ok(f(&conv_v(v)?)?.map_latgraph(conv_k, conv_v))
             }))
         }
     }
@@ -96,7 +98,7 @@ impl<G: LatGraph + 'static> TaggedLatGraph<G> {
         TaggedLatGraph { latgraph, tag }
     }
     fn map_lookup<T: 'static>(tag: Tag<G>, lookup: LatLookup<G::Key, G::Value, T>) -> LatLookup<TaggedKey, TaggedValue, T> {
-        lookup.map_latgraph(move |k| TaggedKey::new(tag, &k), move |v: TaggedValue| v.get_as(tag))
+        lookup.map_latgraph(move |k| TaggedKey::new(tag, &k), move |v: &TaggedValue| v.get_as(tag))
     }
 }
 
