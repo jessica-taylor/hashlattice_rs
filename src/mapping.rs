@@ -16,11 +16,22 @@ pub trait LatMapping<L: LatGraph> : Send + Sync {
 #[async_trait]
 pub trait LatMappingExt<L: LatGraph> : LatMapping<L> {
 
-    async fn dependencies(self: Arc<Self>, key: L::K) -> Result<BTreeSet<L::K>, String>;
+    fn cmp_keys(&self, key1: &Self::Key, key2: &Self::Key) -> Result<Ordering, String> {
+        key1.partial_cmp(key2).ok_or("Keys are not comparable".to_string())
+    }
 
-    async fn join(self: Arc<Self>, key: L::K, v1: L::V, v2: L::V) -> Result<L::V, String>;
+    fn check_elem(&self, key: &Self::Key, value: &Self::Value) -> LatLookupResult<Self::Key, Self::Value, ()> {
+        Ok(LatLookup::Done(()))
+    }
 
-    async fn autofill(self: Arc<Self>, key: L::K) -> Result<L::V, String>;
+    fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value) -> LatLookupResult<Self::Key, Self::Value, Self::Value>;
+
+    fn bottom(&self, key: &Self::Key) -> LatLookupResult<Self::Key, Self::Value, Self::Value>;
+
+    fn transport(&self, key: &Self::Key, value: &Self::Value) -> LatLookupResult<Self::Key, Self::Value, LatLookup<Self::Key, Self::Value, Self::Value>> {
+        Ok(LatLookup::Done(LatLookup::Done(value.clone())))
+    }
+
 }
 
 #[async_trait]

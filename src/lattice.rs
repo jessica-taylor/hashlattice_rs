@@ -1,6 +1,7 @@
 use std::collections::{BTreeSet, BTreeMap};
 use std::cmp::Ordering;
 use std::sync::Arc;
+use std::future::Future;
 
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
@@ -14,20 +15,32 @@ pub enum LatLookup<K, V, T> {
 type LatLookupResult<K, V, T> = Result<LatLookup<K, V, T>, String>;
 
 impl<K: Ord + 'static, V: 'static, T : 'static> LatLookup<K, V, T> {
-    // fn to_set(self, mut lookup: impl FnMut(K) -> Result<V, String>) -> Result<(BTreeSet<K>, T), String> {
-    //     let mut this = self;
-    //     let set = BTreeSet::new();
-    //     loop {
-    //         match this {
-    //             LatLookup::Done(Err(e)) => { return Err(e); },
-    //             LatLookup::Done(Ok(res)) => { return Ok((set, res)); },
-    //             LatLookup::Lookup(k, f) => {
-    //                 let v = lookup(k)?;
-    //                 this = f(v);
-    //             }
-    //         }
-    //     }
-    // }
+    fn to_set(self, mut lookup: impl FnMut(K) -> Result<V, String>) -> Result<(BTreeSet<K>, T), String> {
+        let mut this = self;
+        let set = BTreeSet::new();
+        loop {
+            match this {
+                LatLookup::Done(res) => { return Ok((set, res)); },
+                LatLookup::Lookup(k, f) => {
+                    let v = lookup(k)?;
+                    this = f(v)?;
+                }
+            }
+        }
+    }
+    async fn to_set_async<F: Future<Output = Result<V, String>>>(self, mut lookup: impl Send + Sync + FnMut(K) -> F) -> Result<(BTreeSet<K>, T), String> {
+        let mut this = self;
+        let set = BTreeSet::new();
+        loop {
+            match this {
+                LatLookup::Done(res) => { return Ok((set, res)); },
+                LatLookup::Lookup(k, f) => {
+                    let v = lookup(k).await?;
+                    this = f(v)?;
+                }
+            }
+        }
+    }
     fn and_then<T2>(self, f: impl 'static + Send + Sync + FnOnce(T) -> LatLookupResult<K, V, T2>) -> LatLookupResult<K, V, T2> {
         match self {
             LatLookup::Done(res) => { f(res) },
