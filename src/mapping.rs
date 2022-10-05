@@ -3,15 +3,18 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 
+use crate::tagged_mapping::TaggedMapping;
 use crate::lattice::{LatGraph, LatLookup};
-use crate::crypto::HashCode;
+use crate::crypto::{Hash, hash};
+
+type DepsHash<L> = Hash<BTreeMap<<L as TaggedMapping>::Key, <L as TaggedMapping>::Value>>;
 
 #[async_trait]
 pub trait LatMapping<L: LatGraph> : Send + Sync {
 
     fn get_latgraph(&self) -> &L;
 
-    async fn get_lattice_max(self: Arc<Self>, key: L::Key) -> Result<(L::Value, HashCode), String>;
+    async fn get_lattice_max(self: Arc<Self>, key: L::Key) -> Result<(L::Value, DepsHash<L>), String>;
 }
 
 #[async_trait]
@@ -38,51 +41,56 @@ pub trait LatMappingExt<L: LatGraph + 'static> : LatMapping<L> {
         Ok(self.clone().eval_lookup(self.get_latgraph().bottom(key)?).await?.1)
     }
 
-    async fn transport(self: Arc<Self>, new: Arc<Self>, key: &L::Key, value: &L::Value) -> Result<L::Value, String> {
-        let lookup_new = self.clone().eval_lookup(self.get_latgraph().transport(key, value)?).await?.1;
-        Ok(new.eval_lookup(lookup_new).await?.1)
+    async fn transport(self: Arc<Self>, key: &L::Key, value: &L::Value) -> Result<LatLookup<L::Key, L::Value, L::Value>, String> {
+        Ok(self.clone().eval_lookup(self.get_latgraph().transport(key, value)?).await?.1)
     }
 }
 
-// struct JoinMapping<L: LatGraph, M1: LatMapping<L>, M2: LatMapping<L>> {
-//     m1: Arc<M1>,
-//     m2: Arc<M2>,
-//     cache: Mutex<BTreeMap<L::K, L::V>>,
-// }
-// 
-// impl<L: LatGraph, M1: LatMapping<L>, M2: LatMapping<L>> JoinMapping<L, M1, M2> {
-//     pub fn new(m1: Arc<M1>, m2: Arc<M2>) -> Self {
-//         JoinMapping { m1, m2, cache: Mutex::new(BTreeMap::new()) }
-//     }
-// }
-// 
-// #[async_trait]
-// impl<L: LatGraph + 'static, M1: LatMapping<L>, M2: LatMapping<L>> LatMapping<L> for JoinMapping<L, M1, M2> {
-//     fn get_latgraph(&self) -> &L {
-//         self.m1.get_latgraph()
-//     }
-// 
-//     async fn get_lattice_max(self: Arc<Self>, key: L::K) -> Result<L::V, String> {
-//         {
-//             let cache = self.cache.lock().unwrap();
-//             if let Some(v) = cache.get(&key) {
-//                 return Ok(v.clone());
-//             }
-//         }
-//         let v1 = self.m1.clone().get_lattice_max(key.clone()).await?;
-//         let v2 = self.m2.clone().get_lattice_max(key.clone()).await?;
-//         let deps1 = self.get_latgraph().dependencies(&key, Some(&v1))?;
-//         let deps2 = self.get_latgraph().dependencies(&key, Some(&v2))?;
-//         let mut depvals = BTreeMap::new();
-//         for dep in deps1.union(&deps2) {
-//             depvals.insert(dep.clone(), self.clone().get_lattice_max(dep.clone()).await?);
-//         }
-//         let res = self.get_latgraph().join(&key, &v1, &v2, &depvals)?;
-//         let mut cache = self.cache.lock().unwrap();
-//         cache.insert(key, res.clone());
-//         Ok(res)
-//     }
-// }
+impl<L: LatGraph + 'static, M: LatMapping<L>> LatMappingExt<L> for M {}
+
+struct JoinMapping<L: LatGraph, M1: LatMapping<L>, M2: LatMapping<L>> {
+    m1: Arc<M1>,
+    m2: Arc<M2>,
+    cache: Mutex<BTreeMap<L::Key, (L::Value, DepsHash<L>)>>,
+}
+
+impl<L: LatGraph, M1: LatMapping<L>, M2: LatMapping<L>> JoinMapping<L, M1, M2> {
+    pub fn new(m1: Arc<M1>, m2: Arc<M2>) -> Self {
+        JoinMapping { m1, m2, cache: Mutex::new(BTreeMap::new()) }
+    }
+}
+
+#[async_trait]
+impl<L: LatGraph + 'static, M1: LatMapping<L>, M2: LatMapping<L>> LatMapping<L> for JoinMapping<L, M1, M2> {
+    fn get_latgraph(&self) -> &L {
+        self.m1.get_latgraph()
+    }
+
+    async fn get_lattice_max(self: Arc<Self>, key: L::Key) -> Result<(L::Value, DepsHash<L>), String> {
+        {
+            let cache = self.cache.lock().unwrap();
+            if let Some(res) = cache.get(&key) {
+                return Ok(res.clone());
+            }
+        }
+        let (v1, h1) = self.m1.clone().get_lattice_max(key.clone()).await?;
+        let (v2, h2) = self.m2.clone().get_lattice_max(key.clone()).await?;
+        if h1 == h2 {
+            assert!(v1 == v2);
+            let mut cache = self.cache.lock().unwrap();
+            cache.insert(key, (v1.clone(), h1));
+            return Ok((v1, h1));
+        }
+        let (_, tr1) = self.clone().eval_lookup(self.m1.clone().transport(&key, &v1).await?).await?;
+        let (_, tr2) = self.clone().eval_lookup(self.m2.clone().transport(&key, &v2).await?).await?;
+        let join = self.clone().join(&key, &tr1, &tr2).await?;
+        let (join_deps, ()) = self.clone().eval_lookup(self.get_latgraph().check_elem(&key, &join)?).await?;
+        let mut cache = self.cache.lock().unwrap();
+        let hash_deps = hash(&join_deps);
+        cache.insert(key, (join.clone(), hash_deps));
+        Ok((join, hash_deps))
+    }
+}
 
 // pub struct MapLatticeReadDB<L: LatGraph> {
 //     latgraph: Arc<L>,
