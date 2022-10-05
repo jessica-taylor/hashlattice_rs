@@ -1,13 +1,14 @@
 use std::cmp::Ordering;
 use std::marker::PhantomData;
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
 pub trait TaggedMapping {
-    type Key : Eq + Ord + Clone + Send + Sync + Serialize + DeserializeOwned;
+    type Key : Eq + Ord + Clone + Send + Sync + Debug + Serialize + DeserializeOwned;
 
-    type Value : Eq + Clone + Send + Sync + Serialize + DeserializeOwned;
+    type Value : Eq + Clone + Send + Sync + Debug + Serialize + DeserializeOwned;
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -139,7 +140,7 @@ impl TaggedMap {
         self.map.insert(TaggedKey::new(tag, key), TaggedValue::new(tag, value));
     }
     fn get<M: TaggedMapping>(&self, tag: Tag<M>, key: &M::Key) -> Result<M::Value, String> {
-        let tag_value = self.map.get(&TaggedKey::new(tag, key)).ok_or("Key not found".to_string())?;
+        let tag_value = self.map.get(&TaggedKey::new(tag, key)).ok_or(format!("Key not found: {:?}", key))?;
         tag_value.get_as(tag)
     }
 }

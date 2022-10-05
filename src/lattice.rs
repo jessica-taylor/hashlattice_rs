@@ -72,7 +72,7 @@ impl<K: Ord + 'static, V: 'static, T : 'static> LatLookup<K, V, T> {
 pub trait LatGraph : Send + Sync + TaggedMapping {
 
     fn cmp_keys(&self, key1: &Self::Key, key2: &Self::Key) -> Result<Ordering, String> {
-        key1.partial_cmp(key2).ok_or("Keys are not comparable".to_string())
+        key1.partial_cmp(key2).ok_or(format!("Cannot compare keys: {:?} and {:?}", key1, key2))
     }
 
     fn check_elem(&self, key: &Self::Key, value: &Self::Value) -> LatLookupResult<Self::Key, Self::Value, ()> {

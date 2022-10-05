@@ -1,5 +1,6 @@
 use std::collections::{BTreeSet, BTreeMap};
 use std::sync::{Arc, Mutex};
+use std::cmp::Ordering;
 
 use async_trait::async_trait;
 
@@ -20,29 +21,36 @@ pub trait LatMapping<L: LatGraph> : Send + Sync {
 #[async_trait]
 pub trait LatMappingExt<L: LatGraph + 'static> : LatMapping<L> {
 
-    async fn eval_lookup<T: Send + 'static>(self: Arc<Self>, lookup: LatLookup<L::Key, L::Value, T>) -> Result<(BTreeMap<L::Key, L::Value>, T), String> {
+    async fn eval_lookup<T: Send + 'static>(self: Arc<Self>, upper_key: &L::Key, lookup: LatLookup<L::Key, L::Value, T>) -> Result<(BTreeMap<L::Key, L::Value>, T), String> {
         let self2 = self.clone();
+        let upper_key = upper_key.clone();
         lookup.evaluate_async(move |k| {
             let k = k.clone();
             let self2 = self.clone();
-            async move { Ok(self2.clone().get_lattice_max(k.clone()).await?.0) }
+            let upper_key = upper_key.clone();
+            async move { 
+                if self2.get_latgraph().cmp_keys(&k, &upper_key)? != Ordering::Less {
+                    return Err(format!("Key {:?} is not less than {:?}", k, upper_key));
+                }
+                Ok(self2.clone().get_lattice_max(k.clone()).await?.0)
+            }
         }).await
     }
 
     async fn check_elem(self: Arc<Self>, key: &L::Key, value: &L::Value) -> Result<(), String> {
-        Ok(self.clone().eval_lookup(self.get_latgraph().check_elem(key, value)?).await?.1)
+        Ok(self.clone().eval_lookup(key, self.get_latgraph().check_elem(key, value)?).await?.1)
     }
 
     async fn join(self: Arc<Self>, key: &L::Key, value1: &L::Value, value2: &L::Value) -> Result<L::Value, String> {
-        Ok(self.clone().eval_lookup(self.get_latgraph().join(key, value1, value2)?).await?.1)
+        Ok(self.clone().eval_lookup(key, self.get_latgraph().join(key, value1, value2)?).await?.1)
     }
 
     async fn bottom(self: Arc<Self>, key: &L::Key) -> Result<L::Value, String> {
-        Ok(self.clone().eval_lookup(self.get_latgraph().bottom(key)?).await?.1)
+        Ok(self.clone().eval_lookup(key, self.get_latgraph().bottom(key)?).await?.1)
     }
 
     async fn transport(self: Arc<Self>, key: &L::Key, value: &L::Value) -> Result<LatLookup<L::Key, L::Value, L::Value>, String> {
-        Ok(self.clone().eval_lookup(self.get_latgraph().transport(key, value)?).await?.1)
+        Ok(self.clone().eval_lookup(key, self.get_latgraph().transport(key, value)?).await?.1)
     }
 }
 
@@ -81,10 +89,10 @@ impl<L: LatGraph + 'static, M1: LatMapping<L>, M2: LatMapping<L>> LatMapping<L> 
             cache.insert(key, (v1.clone(), h1));
             return Ok((v1, h1));
         }
-        let (_, tr1) = self.clone().eval_lookup(self.m1.clone().transport(&key, &v1).await?).await?;
-        let (_, tr2) = self.clone().eval_lookup(self.m2.clone().transport(&key, &v2).await?).await?;
+        let (_, tr1) = self.clone().eval_lookup(&key, self.m1.clone().transport(&key, &v1).await?).await?;
+        let (_, tr2) = self.clone().eval_lookup(&key, self.m2.clone().transport(&key, &v2).await?).await?;
         let join = self.clone().join(&key, &tr1, &tr2).await?;
-        let (join_deps, ()) = self.clone().eval_lookup(self.get_latgraph().check_elem(&key, &join)?).await?;
+        let (join_deps, ()) = self.clone().eval_lookup(&key, self.get_latgraph().check_elem(&key, &join)?).await?;
         let mut cache = self.cache.lock().unwrap();
         let hash_deps = hash(&join_deps);
         cache.insert(key, (join.clone(), hash_deps));
