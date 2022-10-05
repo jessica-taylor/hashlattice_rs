@@ -178,7 +178,11 @@
 
       Note that each key corresponds to a semilattice fibration from a multiverse containing lower keys. We can re-interpret each element of the lattice $L_{u(k), n(k)}$ as mappings from keys less no higher than $k$ (written as $K_{\leq k}$) to $V$, which doesn't affect the semilattice structure. Accordingly, $l_k$ and $t_k$ are re-interpreted as taking mappings as arguments.
 
-      It is somewhat unwieldy to define $l_k$ and $t_k$ in implementation, since they depend on a possibly-infinite mapping. Accordingly, we assume that these operations only depend on a defined set of values. Let $d_k^\star : 2^{K_{<k}}$ be a set of lattice dependencies, and $d_{k}(v) : 2^{K_{<k}}$ be a set of value dependencies for $v \in V$. Both dependency sets must only include keys less than $k$. We say $(l_k, d_k)$ have dependencies according to $d_{k, l}, d_{k, v}$ if:
+      It is somewhat unwieldy to define $l_k$ and $t_k$ in implementation, since they depend on a possibly-infinite mapping. To make the representation tractable, we assume $l_k$ and $t_k$ are \emph{continuous} in the sense that each of their outputs depend on only the values of a finite number of keys.
+
+      A continuous function $g_k : (K_{<k} \rightarrow V) \rightarrow S$, with $K_{<k}, V, S$ treated as having a discrete topology and the $K_{<k} \rightarrow V$ space treated as having the product topology, is continuous if for each $s \in S$, the preimage $f_k^{-1}(s)$ is open. An subset $F \subseteq K_{<k} \rightarrow V$ is open if it is a union of basis sets of the form $\{ f \in K_{<k} \rightarrow V | f(k_1) = v_1 \wedge \ldots \wedge f(k_n) = v_n \}$. A given $f : K_{<k} \rightarrow V$ in this set is, accordingly, in at least one of these bases. Any $f'$ that agrees with $f$ on the keys of this basis therefore has the same value $g(f') = g(f)$. We say the elements of the smallest such basis set are the dependencies of $g$ in $f$.
+
+      Let $d_k^\star : 2^{K_{<k}}$ be a set of lattice dependencies, and $d_{k}(v) : 2^{K_{<k}}$ be a set of value dependencies for $v \in V$. Both dependency sets must only include keys less than $k$. We say $(l_k, d_k)$ have dependencies according to $d_{k, l}, d_{k, v}$ if:
 
       \begin{itemize}
         \item $\mathrm{Elems}(l_k(m))$ only depends on $m(k')$ for each $k' \in d_k^\star$.

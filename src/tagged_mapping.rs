@@ -9,6 +9,11 @@ pub trait TaggedMapping {
     type Key : Eq + Ord + Clone + Send + Sync + Debug + Serialize + DeserializeOwned;
 
     type Value : Eq + Clone + Send + Sync + Debug + Serialize + DeserializeOwned;
+
+    fn cmp_keys(&self, key1: &Self::Key, key2: &Self::Key) -> Result<Ordering, String> {
+        key1.partial_cmp(key2).ok_or(format!("Cannot compare keys: {:?} and {:?}", key1, key2))
+    }
+
 }
 
 #[derive(Debug, Serialize, Deserialize)]
