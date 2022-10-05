@@ -100,6 +100,50 @@ impl<L: LatGraph + 'static, M1: LatMapping<L>, M2: LatMapping<L>> LatMapping<L> 
     }
 }
 
+struct ReplaceMapping<L: LatGraph, M: LatMapping<L>> {
+    m: Arc<M>,
+    key: L::Key,
+    value: L::Value,
+    cache: Mutex<BTreeMap<L::Key, (L::Value, DepsHash<L>)>>,
+}
+
+impl<L: LatGraph, M: LatMapping<L>> ReplaceMapping<L, M> {
+    pub fn new(m: Arc<M>, key: L::Key, value: L::Value) -> Self {
+        ReplaceMapping { m, key, value, cache: Mutex::new(BTreeMap::new()) }
+    }
+}
+
+#[async_trait]
+impl<L: LatGraph + 'static, M: LatMapping<L>> LatMapping<L> for ReplaceMapping<L, M> {
+    fn get_latgraph(&self) -> &L {
+        self.m.get_latgraph()
+    }
+
+    async fn get_lattice_max(self: Arc<Self>, key: L::Key) -> Result<(L::Value, DepsHash<L>), String> {
+        let cmp = self.get_latgraph().cmp_keys(&key, &self.key)?;
+        if cmp == Ordering::Less {
+            return self.m.clone().get_lattice_max(key).await;
+        }
+        {
+            let cache = self.cache.lock().unwrap();
+            if let Some(res) = cache.get(&key) {
+                return Ok(res.clone());
+            }
+        }
+        let (old_value, old_dephash) = self.m.clone().get_lattice_max(key.clone()).await?;
+        let res = if cmp == Ordering::Equal {
+            self.clone().join(&key, &old_value, &self.value).await?
+        } else {
+            self.clone().eval_lookup(&key, self.m.clone().transport(&key, &old_value).await?).await?.1
+        };
+        let (res_deps, ()) = self.clone().eval_lookup(&key, self.get_latgraph().check_elem(&key, &res)?).await?;
+        let mut cache = self.cache.lock().unwrap();
+        let hash_deps = hash(&res_deps);
+        cache.insert(key, (res.clone(), hash_deps));
+        Ok((res, hash_deps))
+    }
+}
+
 // pub struct MapLatticeReadDB<L: LatGraph> {
 //     latgraph: Arc<L>,
 //     values: Arc<BTreeMap<L::LID, L::Value>>,
