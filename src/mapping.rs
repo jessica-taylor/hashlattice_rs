@@ -26,46 +26,24 @@ pub trait LatMappingExt<L: LatGraph + 'static> : LatMapping<L> {
         }).await
     }
 
-    // async fn check_elem(&self, key: &Self::Key, value: &Self::Value) -> Result<Self::Key, Self::Value, ()> {
-    //     Ok(LatLookup::Done(()))
-    // }
+    async fn check_elem(self: Arc<Self>, key: &L::Key, value: &L::Value) -> Result<(), String> {
+        Ok(self.clone().eval_lookup(self.get_latgraph().check_elem(key, value)?).await?.1)
+    }
 
-    // fn join(&self, key: &Self::Key, value1: &Self::Value, value2: &Self::Value) -> LatLookupResult<Self::Key, Self::Value, Self::Value>;
+    async fn join(self: Arc<Self>, key: &L::Key, value1: &L::Value, value2: &L::Value) -> Result<L::Value, String> {
+        Ok(self.clone().eval_lookup(self.get_latgraph().join(key, value1, value2)?).await?.1)
+    }
 
-    // fn bottom(&self, key: &Self::Key) -> LatLookupResult<Self::Key, Self::Value, Self::Value>;
+    async fn bottom(self: Arc<Self>, key: &L::Key) -> Result<L::Value, String> {
+        Ok(self.clone().eval_lookup(self.get_latgraph().bottom(key)?).await?.1)
+    }
 
-    // fn transport(&self, key: &Self::Key, value: &Self::Value) -> LatLookupResult<Self::Key, Self::Value, LatLookup<Self::Key, Self::Value, Self::Value>> {
-    //     Ok(LatLookup::Done(LatLookup::Done(value.clone())))
-    // }
-
+    async fn transport(self: Arc<Self>, new: Arc<Self>, key: &L::Key, value: &L::Value) -> Result<L::Value, String> {
+        let lookup_new = self.clone().eval_lookup(self.get_latgraph().transport(key, value)?).await?.1;
+        Ok(new.eval_lookup(lookup_new).await?.1)
+    }
 }
 
-// #[async_trait]
-// impl<L: LatGraph + 'static, M: LatMapping<L> + 'static> LatMappingExt<L> for M {
-//     async fn dependencies(self: Arc<Self>, key: L::K) -> Result<BTreeSet<L::K>, String> {
-//         let value = self.clone().get_lattice_max(key.clone()).await?;
-//         self.get_latgraph().dependencies(&key, Some(&value))
-//     }
-// 
-//     async fn join(self: Arc<Self>, key: L::K, v1: L::V, v2: L::V) -> Result<L::V, String> {
-//         let mut deps = BTreeMap::new();
-//         let deps1 = self.get_latgraph().dependencies(&key, Some(&v1))?;
-//         let deps2 = self.get_latgraph().dependencies(&key, Some(&v2))?;
-//         for dep in deps1.union(&deps2) {
-//             deps.insert(dep.clone(), self.clone().get_lattice_max(dep.clone()).await?);
-//         }
-//         self.get_latgraph().join(&key, &v1, &v2, &deps)
-//     }
-// 
-//     async fn autofill(self: Arc<Self>, key: L::K) -> Result<L::V, String> {
-//         let mut deps = BTreeMap::new();
-//         for dep in self.get_latgraph().dependencies(&key, None)? {
-//             deps.insert(dep.clone(), self.clone().get_lattice_max(dep.clone()).await?);
-//         }
-//         self.get_latgraph().autofill(&key, &deps)
-//     }
-// }
-// 
 // struct JoinMapping<L: LatGraph, M1: LatMapping<L>, M2: LatMapping<L>> {
 //     m1: Arc<M1>,
 //     m2: Arc<M2>,
