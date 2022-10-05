@@ -120,6 +120,8 @@ impl<L: LatGraph + 'static, M: LatMapping<L>> LatMapping<L> for ReplaceMapping<L
     }
 
     async fn get_lattice_max(self: Arc<Self>, key: L::Key) -> Result<(L::Value, DepsHash<L>), String> {
+        // TODO: this evaluates on too many keys! all greater keys, not just dependents. maybe
+        // topological sort?
         let cmp = self.get_latgraph().cmp_keys(&key, &self.key)?;
         if cmp == Ordering::Less {
             return self.m.clone().get_lattice_max(key).await;

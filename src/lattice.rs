@@ -69,6 +69,16 @@ impl<K: Ord + 'static, V: 'static, T : 'static> LatLookup<K, V, T> {
     }
 }
 
+type TagLatLookup<T> = LatLookup<TaggedKey, TaggedValue, T>;
+type TagLatLookupResult<T> = LatLookupResult<TaggedKey, TaggedValue, T>;
+
+impl<T> TagLatLookup<T> {
+    pub fn lookup<M: TaggedMapping + Send + Sync + 'static>(tag: Tag<M>, key: &M::Key, cont: impl 'static + Send + Sync + FnOnce(&M::Value) -> TagLatLookupResult<T>) -> TagLatLookup<T> {
+        LatLookup::Lookup(TaggedKey::new(tag, key), Box::new(move |v| Ok(cont(&v.get_as(tag)?)?)))
+    }
+
+}
+
 pub trait LatGraph : Send + Sync + TaggedMapping {
 
     fn cmp_keys(&self, key1: &Self::Key, key2: &Self::Key) -> Result<Ordering, String> {
