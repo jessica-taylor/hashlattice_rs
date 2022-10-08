@@ -56,6 +56,27 @@ pub trait LatMappingExt<L: LatGraph + 'static> : LatMapping<L> {
 
 impl<L: LatGraph + 'static, M: LatMapping<L>> LatMappingExt<L> for M {}
 
+struct EmptyMapping<L: LatGraph> {
+    latgraph: L,
+}
+
+// impl<L: LatGraph> EmptyMapping<L> {
+//     fn new(latgraph: L) -> Self {
+//         Self { latgraph }
+//     }
+// }
+// 
+// #[async_trait]
+// impl<L: LatGraph> LatMapping<L> for EmptyMapping<L> {
+//     fn get_latgraph(&self) -> &L {
+//         &self.latgraph
+//     }
+// 
+//     async fn get_lattice_max(self: Arc<Self>, key: L::Key) -> Result<(L::Value, DepsHash<L>), String> {
+//         Ok((self.get_latgraph().bottom(&key).await?, hash(&BTreeMap::new())))
+//     }
+// }
+
 struct JoinMapping<L: LatGraph, M1: LatMapping<L>, M2: LatMapping<L>> {
     m1: Arc<M1>,
     m2: Arc<M2>,
@@ -102,14 +123,20 @@ impl<L: LatGraph + 'static, M1: LatMapping<L>, M2: LatMapping<L>> LatMapping<L> 
 
 struct ReplaceMapping<L: LatGraph, M: LatMapping<L>> {
     m: Arc<M>,
-    key: L::Key,
-    value: L::Value,
+    kvs: BTreeMap<L::Key, L::Value>,
+    min_key: L::Key,
     cache: Mutex<BTreeMap<L::Key, (L::Value, DepsHash<L>)>>,
 }
 
 impl<L: LatGraph, M: LatMapping<L>> ReplaceMapping<L, M> {
-    pub fn new(m: Arc<M>, key: L::Key, value: L::Value) -> Self {
-        ReplaceMapping { m, key, value, cache: Mutex::new(BTreeMap::new()) }
+    pub fn new(m: Arc<M>, kvs: BTreeMap<L::Key, L::Value>) -> Self {
+        let mut min_key = kvs.keys().next().unwrap().clone();
+        for k in kvs.keys() {
+            if m.get_latgraph().cmp_keys(k, &min_key).unwrap() == Ordering::Less {
+                min_key = k.clone();
+            }
+        }
+        ReplaceMapping { m, kvs, min_key, cache: Mutex::new(BTreeMap::new()) }
     }
 }
 
@@ -122,8 +149,7 @@ impl<L: LatGraph + 'static, M: LatMapping<L>> LatMapping<L> for ReplaceMapping<L
     async fn get_lattice_max(self: Arc<Self>, key: L::Key) -> Result<(L::Value, DepsHash<L>), String> {
         // TODO: this evaluates on too many keys! all greater keys, not just dependents. maybe
         // topological sort?
-        let cmp = self.get_latgraph().cmp_keys(&key, &self.key)?;
-        if cmp == Ordering::Less {
+        if self.get_latgraph().cmp_keys(&key, &self.min_key)? == Ordering::Less {
             return self.m.clone().get_lattice_max(key).await;
         }
         {
@@ -133,10 +159,9 @@ impl<L: LatGraph + 'static, M: LatMapping<L>> LatMapping<L> for ReplaceMapping<L
             }
         }
         let (old_value, old_dephash) = self.m.clone().get_lattice_max(key.clone()).await?;
-        let res = if cmp == Ordering::Equal {
-            self.clone().join(&key, &old_value, &self.value).await?
-        } else {
-            self.clone().eval_lookup(&key, self.m.clone().transport(&key, &old_value).await?).await?.1
+        let res = match self.kvs.get(&key) {
+            Some(self_value) => self.clone().join(&key, &old_value, self_value).await?,
+            None => self.clone().eval_lookup(&key, self.m.clone().transport(&key, &old_value).await?).await?.1
         };
         let (res_deps, ()) = self.clone().eval_lookup(&key, self.get_latgraph().check_elem(&key, &res)?).await?;
         let mut cache = self.cache.lock().unwrap();
