@@ -1,7 +1,7 @@
 mod crypto;
 mod tagged_mapping;
 mod lattice;
-mod mapping;
+mod db;
 
 fn main() {
     println!("Hello, world!");
