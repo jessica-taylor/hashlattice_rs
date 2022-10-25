@@ -85,3 +85,40 @@ impl<CI: TaggedMapping, CM: TaggedMapping> MutComputationContext<CI, CM> for Com
         Ok(res)
     }
 }
+
+pub struct LatticeStore<CI: TaggedMapping, CM: TaggedMapping, L: TaggedMapping> {
+    lib: Arc<dyn LatticeLibrary<CI, CM, L>>,
+    comp_store: ComputationStore<CI, CM>,
+    db: Box<dyn DBMapping<L::Key, L::Value>>,
+}
+
+impl<CI: TaggedMapping, CM: TaggedMapping, L: TaggedMapping> LatticeStore<CI, CM, L> {
+    pub fn new(lib: impl LatticeLibrary<CI, CM, L> + 'static,
+               comp_store: ComputationStore<CI, CM>,
+               db: impl DBMapping<L::Key, L::Value> + 'static) -> LatticeStore<CI, CM, L> {
+        LatticeStore {
+            lib: Arc::new(lib),
+            comp_store,
+            db: Box::new(db)
+        }
+    }
+
+    pub fn get_lat_max(&self, key: &L::Key) -> Option<L::Value> {
+        self.db.get(key)
+    }
+
+    pub fn join_lat(&mut self, key: &L::Key, value: &L::Value) -> Result<L::Value, String> {
+        self.lib.clone().check_elem(key, value, &mut self.comp_store)?;
+        match self.get_lat_max(key) {
+            None => {
+                self.db.put(key.clone(), Some(value.clone()));
+                Ok(value.clone())
+            },
+            Some(max) => {
+                let new_max = self.lib.clone().join(key, &max, value, &mut self.comp_store)?;
+                self.db.put(key.clone(), Some(new_max.clone()));
+                Ok(new_max)
+            }
+        }
+    }
+}
