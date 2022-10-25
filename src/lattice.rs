@@ -9,33 +9,35 @@ use async_trait::async_trait;
 use crate::crypto::HashCode;
 use crate::tagged_mapping::{TaggedMapping, Tag, TaggedKey, TaggedValue};
 
-#[async_trait]
-pub trait ComputationContext<CI: TaggedMapping, CM: TaggedMapping> {
+pub trait ImmutComputationContext<CI: TaggedMapping> : Send + Sync {
 
-    async fn hash_lookup(&self, hash: HashCode) -> Result<Vec<u8>, String>;
+    fn hash_lookup(&self, hash: HashCode) -> Result<Vec<u8>, String>;
 
-    async fn hash_put(&mut self, value: Vec<u8>) -> Result<HashCode, String>;
+    fn eval_immut(&mut self, key: &CI::Key) -> Result<CI::Value, String>;
+}
 
-    async fn eval_immut(&self, key: &CI::Key) -> Result<CI::Value, String>;
+pub trait MutComputationContext<CI: TaggedMapping, CM: TaggedMapping> : ImmutComputationContext<CI> + Send + Sync {
 
-    async fn eval_mut(&mut self, key: &CM::Key) -> Result<CM::Value, String>;
+    fn hash_put(&mut self, value: Vec<u8>) -> Result<HashCode, String>;
+
+    fn eval_mut(&mut self, key: &CM::Key) -> Result<CM::Value, String>;
 
 }
 
 #[async_trait]
-pub trait ComputationLibrary<CI: TaggedMapping, CM: TaggedMapping> {
+pub trait ComputationLibrary<CI: TaggedMapping, CM: TaggedMapping> : Send + Sync {
 
-    async fn eval_immut(&self, key: &CI::Key, ctx: &dyn ComputationContext<CI, CM>) -> Result<CI::Value, String>;
+    fn eval_immut(&self, key: &CI::Key, ctx: &mut dyn ImmutComputationContext<CI>) -> Result<CI::Value, String>;
 
-    async fn eval_mut(&self, key: &CM::Key, ctx: &mut dyn ComputationContext<CI, CM>) -> Result<CM::Value, String>;
+    fn eval_mut(&self, key: &CM::Key, ctx: &mut dyn MutComputationContext<CI, CM>) -> Result<CM::Value, String>;
 }
 
 #[async_trait]
-pub trait LatticeLibrary<CI: TaggedMapping, CM: TaggedMapping, L: TaggedMapping> {
+pub trait LatticeLibrary<CI: TaggedMapping, CM: TaggedMapping, L: TaggedMapping> : Send + Sync {
 
-    async fn check_elem(&self, key: &L::Key, value: &L::Value, ctx: &dyn ComputationContext<CI, CM>) -> Result<(), String>;
+    fn check_elem(&self, key: &L::Key, value: &L::Value, ctx: &mut dyn ImmutComputationContext<CI>) -> Result<(), String>;
 
-    async fn join(&self, key: &L::Key, a: &L::Value, b: &L::Value, ctx: &mut dyn ComputationContext<CI, CM>) -> Result<L::Value, String>;
+    fn join(&self, key: &L::Key, a: &L::Value, b: &L::Value, ctx: &mut dyn MutComputationContext<CI, CM>) -> Result<L::Value, String>;
 }
 
 
