@@ -11,33 +11,34 @@ use crate::tagged_mapping::{TaggedMapping, Tag, TaggedKey, TaggedValue};
 
 pub trait ImmutComputationContext<CI: TaggedMapping> : Send + Sync {
 
-    fn hash_lookup(&self, hash: HashCode) -> Result<Vec<u8>, String>;
+    fn hash_lookup(&mut self, hash: HashCode) -> Result<Vec<u8>, String>;
 
     fn eval_immut(&mut self, key: &CI::Key) -> Result<CI::Value, String>;
 }
 
-pub trait MutComputationContext<CI: TaggedMapping, CM: TaggedMapping> : ImmutComputationContext<CI> + Send + Sync {
+pub trait MutComputationContext<CI: TaggedMapping> : ImmutComputationContext<CI> {
 
     fn hash_put(&mut self, value: Vec<u8>) -> Result<HashCode, String>;
 
-    fn eval_mut(&mut self, key: &CM::Key) -> Result<CM::Value, String>;
-
 }
 
-#[async_trait]
-pub trait ComputationLibrary<CI: TaggedMapping, CM: TaggedMapping> : Send + Sync {
+pub trait ComputationLibrary<CI: TaggedMapping> : Send + Sync {
 
     fn eval_immut(&self, key: &CI::Key, ctx: &mut dyn ImmutComputationContext<CI>) -> Result<CI::Value, String>;
-
-    fn eval_mut(&self, key: &CM::Key, ctx: &mut dyn MutComputationContext<CI, CM>) -> Result<CM::Value, String>;
 }
 
-#[async_trait]
-pub trait LatticeLibrary<CI: TaggedMapping, CM: TaggedMapping, L: TaggedMapping> : Send + Sync {
+pub trait LatticeLibrary<CI: TaggedMapping, L: TaggedMapping> : Send + Sync {
 
     fn check_elem(&self, key: &L::Key, value: &L::Value, ctx: &mut dyn ImmutComputationContext<CI>) -> Result<(), String>;
 
-    fn join(&self, key: &L::Key, a: &L::Value, b: &L::Value, ctx: &mut dyn MutComputationContext<CI, CM>) -> Result<L::Value, String>;
+    fn join(&self, key: &L::Key, a: &L::Value, b: &L::Value, ctx: &mut dyn MutComputationContext<CI>) -> Result<L::Value, String>;
+}
+
+pub trait LatticeContext<CI: TaggedMapping, L: TaggedMapping> : MutComputationContext<CI, L> {
+
+    fn get_lattice(&self, key: &L::Key) -> Option<L::Value>;
+
+    fn join_lattice(&mut self, key: &L::Key, value: L::Value) -> Result<L::Value, String>;
 }
 
 
