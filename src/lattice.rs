@@ -9,9 +9,20 @@ use async_trait::async_trait;
 use crate::crypto::HashCode;
 use crate::tagged_mapping::{TaggedMapping, Tag, TaggedKey, TaggedValue};
 
-pub trait ImmutComputationContext<CI: TaggedMapping> : Send + Sync {
+pub trait HashLookup : Send + Sync {
 
     fn hash_lookup(&mut self, hash: HashCode) -> Result<Vec<u8>, String>;
+}
+
+pub struct NullHashLookup;
+
+impl HashLookup for NullHashLookup {
+    fn hash_lookup(&mut self, hash: HashCode) -> Result<Vec<u8>, String> {
+        Err(format!("NullHashLookup: no hash lookup for {:?}", hash))
+    }
+}
+
+pub trait ImmutComputationContext<CI: TaggedMapping> : HashLookup {
 
     fn eval_immut(&mut self, key: &CI::Key) -> Result<CI::Value, String>;
 }

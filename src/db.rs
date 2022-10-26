@@ -6,7 +6,7 @@ use async_trait::async_trait;
 
 use crate::crypto::{HashCode, hash_of_bytes};
 use crate::tagged_mapping::TaggedMapping;
-use crate::lattice::{LatticeLibrary, ComputationLibrary, ImmutComputationContext, MutComputationContext, LatticeContext};
+use crate::lattice::{HashLookup, LatticeLibrary, ComputationLibrary, ImmutComputationContext, MutComputationContext, LatticeContext};
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
 /// a key-value store with key-key dependencies; auto-removes unpinned, non-depended-on keys
@@ -53,17 +53,20 @@ pub struct LatStore<CI: TaggedMapping, L: TaggedMapping> {
     db: Box<dyn DepDB<LatDBMapping<CI, L>>>,
     comp_lib: Arc<dyn ComputationLibrary<CI>>,
     lat_lib: Arc<dyn LatticeLibrary<CI, L>>,
+    backup_hashlookup: Box<dyn HashLookup>,
     deps_stack: Vec<Vec<LatDBKey<CI::Key, L::Key>>>,
 }
 
 impl<CI: TaggedMapping, L: TaggedMapping> LatStore<CI, L> {
     pub fn new(db: impl DepDB<LatDBMapping<CI, L>> + 'static,
                comp_lib: impl ComputationLibrary<CI> + 'static,
-               lat_lib: impl LatticeLibrary<CI, L> + 'static) -> Self {
+               lat_lib: impl LatticeLibrary<CI, L> + 'static,
+               backup_hashlookup: impl HashLookup + 'static) -> Self {
         Self {
             db: Box::new(db),
             comp_lib: Arc::new(comp_lib),
             lat_lib: Arc::new(lat_lib),
+            backup_hashlookup: Box::new(backup_hashlookup),
             deps_stack: Vec::new(),
         }
     }
@@ -82,16 +85,26 @@ impl<CI: TaggedMapping, L: TaggedMapping> LatStore<CI, L> {
     }
 }
 
-impl<CI: TaggedMapping, L: TaggedMapping> ImmutComputationContext<CI> for LatStore<CI, L> {
+impl<CI: TaggedMapping, L: TaggedMapping> HashLookup for LatStore<CI, L> {
     fn hash_lookup(&mut self, hash: HashCode) -> Result<Vec<u8>, String> {
         if let Some(deps) = self.deps_stack.last_mut() {
             deps.push(LatDBKey::Hash(hash));
         }
         match self.db.get_value(&LatDBKey::Hash(hash))? {
             Some(LatDBValue::Hash(bytes)) => Ok(bytes),
-            _ => Err(format!("Hash not found: {:?}", hash)),
+            _ => {
+                let val = self.backup_hashlookup.hash_lookup(hash)?;
+                if hash_of_bytes(&val) != hash {
+                    return Err(format!("hash lookup returned wrong value for hash {:?}", hash));
+                }
+                self.hash_put(val.clone())?;
+                Ok(val)
+            }
         }
     }
+}
+
+impl<CI: TaggedMapping, L: TaggedMapping> ImmutComputationContext<CI> for LatStore<CI, L> {
 
     fn eval_immut(&mut self, key: &CI::Key) -> Result<CI::Value, String> {
         if let Some(deps) = self.deps_stack.last_mut() {
