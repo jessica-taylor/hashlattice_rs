@@ -34,7 +34,7 @@ pub trait LatticeLibrary<CI: TaggedMapping, L: TaggedMapping> : Send + Sync {
     fn join(&self, key: &L::Key, a: &L::Value, b: &L::Value, ctx: &mut dyn MutComputationContext<CI>) -> Result<L::Value, String>;
 }
 
-pub trait LatticeContext<CI: TaggedMapping, L: TaggedMapping> : MutComputationContext<CI, L> {
+pub trait LatticeContext<CI: TaggedMapping, L: TaggedMapping> : MutComputationContext<CI> {
 
     fn get_lattice(&self, key: &L::Key) -> Option<L::Value>;
 
