@@ -9,15 +9,20 @@ use crate::tagged_mapping::TaggedMapping;
 use crate::lattice::{LatticeLibrary, ComputationLibrary, ImmutComputationContext, MutComputationContext, LatticeContext};
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
+/// a key-value store with key-key dependencies; auto-removes unpinned, non-depended-on keys
 pub trait DepDB<M: TaggedMapping>: Send + Sync {
 
     fn has_value(&self, key: &M::Key) -> bool;
 
     fn get_value(&self, key: &M::Key) -> Result<Option<M::Value>, String>;
 
-    fn set_value_deps(&self, key: M::Key, value: M::Value, deps: Vec<M::Key>) -> Result<(), String>;
+    fn set_value_deps(&mut self, key: M::Key, value: M::Value, deps: Vec<M::Key>) -> Result<(), String>;
 
-    fn clear_value_deps(&self, key: &M::Key) -> Result<(), String>;
+    fn set_pin(&mut self, key: &M::Key, pin: bool) -> Result<(), String>;
+
+    fn clear_value_deps(&mut self, key: &M::Key) -> Result<(), String>;
+
+    fn clear_unpinned(&mut self) -> Result<(), String>;
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -61,6 +66,19 @@ impl<CI: TaggedMapping, L: TaggedMapping> LatStore<CI, L> {
             lat_lib: Arc::new(lat_lib),
             deps_stack: Vec::new(),
         }
+    }
+
+    pub fn set_hash_pin(&mut self, hash: &HashCode, pin: bool) -> Result<(), String> {
+        self.db.set_pin(&LatDBKey::Hash(hash.clone()), pin)
+    }
+    pub fn set_immut_pin(&mut self, key: &CI::Key, pin: bool) -> Result<(), String> {
+        self.db.set_pin(&LatDBKey::Immut(key.clone()), pin)
+    }
+    pub fn set_lattice_pin(&mut self, key: &L::Key, pin: bool) -> Result<(), String> {
+        self.db.set_pin(&LatDBKey::Lattice(key.clone()), pin)
+    }
+    pub fn clear_unpinned(&mut self) -> Result<(), String> {
+        self.db.clear_unpinned()
     }
 }
 
