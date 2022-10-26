@@ -11,6 +11,8 @@ use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
 pub trait DepDB<M: TaggedMapping>: Send + Sync {
 
+    fn has_value(&self, key: &M::Key) -> bool;
+
     fn get_value(&self, key: &M::Key) -> Result<Option<M::Value>, String>;
 
     fn set_value_deps(&self, key: M::Key, value: M::Value, deps: Vec<M::Key>) -> Result<(), String>;
@@ -91,6 +93,51 @@ impl<CI: TaggedMapping, L: TaggedMapping> ImmutComputationContext<CI> for LatSto
                 let deps = self.deps_stack.pop().unwrap();
                 self.db.set_value_deps(immut_key, LatDBValue::Immut(value.clone()), deps)?;
                 Ok(value)
+            }
+        }
+    }
+}
+
+impl<CI: TaggedMapping, L: TaggedMapping> MutComputationContext<CI> for LatStore<CI, L> {
+    fn hash_put(&mut self, value: Vec<u8>) -> Result<HashCode, String> {
+        let hash = hash_of_bytes(&value);
+        let key = LatDBKey::Hash(hash);
+        if !self.db.has_value(&key) {
+            self.db.set_value_deps(key.clone(), LatDBValue::Hash(value), Vec::new())?;
+        }
+        Ok(hash)
+    }
+}
+
+impl<CI: TaggedMapping, L: TaggedMapping> LatticeContext<CI, L> for LatStore<CI, L> {
+    fn get_lattice(&self, key: &L::Key) -> Option<L::Value> {
+        match self.db.get_value(&LatDBKey::Lattice(key.clone())) {
+            Ok(Some(LatDBValue::Lattice(value))) => Some(value),
+            _ => None,
+        }
+    }
+
+    fn join_lattice(&mut self, key: &L::Key, value: L::Value) -> Result<L::Value, String> {
+        let new_value = match self.get_lattice(key) {
+            None => value,
+            Some(old_value) => {
+                let joined = self.lat_lib.clone().join(key, &old_value, &value, self)?;
+                if joined == old_value {
+                    return Ok(old_value);
+                }
+                joined
+            }
+        };
+        self.deps_stack.push(Vec::new());
+        match self.lat_lib.clone().check_elem(key, &new_value, self) {
+            Err(err) => {
+                self.deps_stack.pop();
+                Err(err)
+            }
+            Ok(()) => {
+                let deps = self.deps_stack.pop().unwrap();
+                self.db.set_value_deps(LatDBKey::Lattice(key.clone()), LatDBValue::Lattice(new_value.clone()), deps)?;
+                Ok(new_value)
             }
         }
     }
