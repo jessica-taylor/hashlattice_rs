@@ -6,6 +6,8 @@ use tokio::net::{TcpListener, TcpStream};
 use tungstenite::protocol::Message;
 use tokio_tungstenite::WebSocketStream;
 
+use crate::signalmessage::{SignalMessageToServer, SignalMessageToClient};
+
 // https://github.com/snapview/tokio-tungstenite/blob/master/examples/autobahn-server.rs
 
 async fn runserver() -> Result<(), String> {
@@ -43,6 +45,7 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<(), St
         let msg = msg.map_err(|e| e.to_string())?;
         match msg {
             Message::Binary(bs) => {
+                let msg: SignalMessageToServer = rmp_serde::from_slice(&bs).map_err(|e| e.to_string())?;
                 println!("Received a message from {}: {:?}", peer, bs);
                 // ...
             }
