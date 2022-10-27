@@ -1,14 +1,16 @@
 
 use serde::{Serialize, Deserialize};
 
+use crate::crypto::{Hash, PublicKey};
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum SignalMessageToServer {
     GetPeers,
-    Send(String, Vec<u8>),
+    Send(Hash<PublicKey>, Vec<u8>),
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum SignalMessageToClient {
-    Peers(Vec<String>),
-    Received(String, Vec<u8>),
+    Peers(Vec<Hash<PublicKey>>),
+    Received(Hash<PublicKey>, Vec<u8>),
 }

@@ -20,7 +20,7 @@ pub type HashCode = [u8; 32];
 
 pub type PublicKey = RsaPublicKey;
 
-pub type Keypair = RsaPrivateKey;
+pub type PrivateKey = RsaPrivateKey;
 
 pub type Signature = Vec<u8>;
 
@@ -171,14 +171,14 @@ impl<T> Ord for Sig<T> {
 }
 
 /// Generates a ed25519 private key.
-pub fn gen_private_key() -> Keypair {
+pub fn gen_private_key() -> PrivateKey {
     let mut rng = rand::thread_rng();
     let bits = 2048;
-    Keypair::new(&mut rng, bits).expect("failed to generate keypair")
+    PrivateKey::new(&mut rng, bits).expect("failed to generate keypair")
 }
 
 /// Signs a serializable with a given ed25519 key.
-pub fn sign<T: Serialize>(key: &Keypair, msg: T) -> Sig<T> {
+pub fn sign<T: Serialize>(key: &PrivateKey, msg: T) -> Sig<T> {
     let sign_key = SigningKey::<Sha256>::new(key.clone());
     let sig = sign_key.sign(&rmp_serde::to_vec_named(&msg).unwrap());
     Sig {
