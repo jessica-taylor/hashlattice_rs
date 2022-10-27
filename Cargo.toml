@@ -17,3 +17,5 @@ hex = "0.4"
 ed25519-dalek = {version = "1.0", features = ["serde"]}
 sha2 = "0.10"
 webrtc = "0.5"
+tokio = "1.21"
+tokio-tungstenite = "0.17"
