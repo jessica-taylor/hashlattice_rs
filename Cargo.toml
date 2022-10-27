@@ -12,9 +12,10 @@ serde = {version = "1.0", features = ["derive"]}
 async-trait = "0.1"
 async-recursion = "1.0"
 async-mutex = "1.4"
-rand = "0.8"
+rand = {version = "0.8", features = ["getrandom"]}
 hex = "0.4"
-ed25519-dalek = {version = "1.0", features = ["serde"]}
+rsa = {version = "0.7", features = ["serde"]}
+signature = "1.6"
 sha2 = "0.10"
 webrtc = "0.5"
 tokio = "1.21"
