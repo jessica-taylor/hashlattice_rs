@@ -8,7 +8,7 @@ use tokio_tungstenite::WebSocketStream;
 
 // https://github.com/snapview/tokio-tungstenite/blob/master/examples/autobahn-server.rs
 
-async fn main() -> Result<(), String> {
+async fn runserver() -> Result<(), String> {
     // let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8080".to_string());
     let addr = "127.0.0.1:2020";
 
@@ -41,7 +41,15 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<(), St
         .expect("Error during the websocket handshake occurred");
     while let Some(msg) = ws_stream.next().await {
         let msg = msg.map_err(|e| e.to_string())?;
-        println!("Received a message from {}: {}", peer, msg);
+        match msg {
+            Message::Binary(bs) => {
+                println!("Received a message from {}: {:?}", peer, bs);
+                // ...
+            }
+            other => {
+                println!("Received a message which is not binary: {:?}", other);
+            }
+        }
     }
     Ok(())
 }
