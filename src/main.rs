@@ -1,3 +1,4 @@
+mod error;
 mod crypto;
 mod tagged_mapping;
 mod lattice;
