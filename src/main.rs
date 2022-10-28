@@ -1,5 +1,6 @@
 use hashlattice::crypto;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     println!("Hello, world!");
 }
