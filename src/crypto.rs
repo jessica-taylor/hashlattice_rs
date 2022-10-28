@@ -114,7 +114,7 @@ pub fn hash_of_bytes(bs: &[u8]) -> HashCode {
 /// Gets the hash of a serialiable data.
 pub fn hash<T: Serialize>(v: &T) -> Hash<T> {
     Hash {
-        code: hash_of_bytes(rmp_serde::to_vec_named(v).unwrap().as_slice()),
+        code: hash_of_bytes(rmp_serde::to_vec(v).unwrap().as_slice()),
         phantom: std::marker::PhantomData,
     }
 }
@@ -156,17 +156,17 @@ impl<T> Eq for Sig<T> {}
 
 impl<T> PartialOrd for Sig<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        rmp_serde::to_vec_named(self)
+        rmp_serde::to_vec(self)
             .unwrap()
-            .partial_cmp(&rmp_serde::to_vec_named(other).unwrap())
+            .partial_cmp(&rmp_serde::to_vec(other).unwrap())
     }
 }
 
 impl<T> Ord for Sig<T> {
     fn cmp(&self, other: &Self) -> Ordering {
-        rmp_serde::to_vec_named(self)
+        rmp_serde::to_vec(self)
             .unwrap()
-            .cmp(&rmp_serde::to_vec_named(other).unwrap())
+            .cmp(&rmp_serde::to_vec(other).unwrap())
     }
 }
 
@@ -180,7 +180,7 @@ pub fn gen_private_key() -> PrivateKey {
 /// Signs a serializable with a given ed25519 key.
 pub fn sign<T: Serialize>(key: &PrivateKey, msg: T) -> Sig<T> {
     let sign_key = SigningKey::<Sha256>::new(key.clone());
-    let sig = sign_key.sign(&rmp_serde::to_vec_named(&msg).unwrap());
+    let sig = sign_key.sign(&rmp_serde::to_vec(&msg).unwrap());
     Sig {
         signature: sig.to_vec(),
         key: key.to_public_key(),
@@ -194,7 +194,7 @@ impl<T: Serialize> Sig<T> {
         let verify_key: VerifyingKey<_> = VerifyingKey::<Sha256>::new(self.key.clone());
         let sig = RsaSignature::from(self.signature.clone());
         verify_key
-            .verify(&rmp_serde::to_vec_named(msg).unwrap(), &sig)
+            .verify(&rmp_serde::to_vec(msg).unwrap(), &sig)
             .is_ok()
     }
 }

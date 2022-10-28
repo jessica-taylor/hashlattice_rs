@@ -87,7 +87,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
             .bind_by_name(":key", &*key).unwrap();
         if stmt.next().unwrap() == State::Row {
             let value = stmt.read::<Vec<u8>>(0).unwrap();
-            let value = rmp_serde::from_read_ref(&value).unwrap();
+            let value = rmp_serde::from_slice(&value).unwrap();
             Ok(Some(value))
         } else {
             Ok(None)
