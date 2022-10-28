@@ -22,12 +22,34 @@ impl<M: TaggedMapping> SqlDepDB<M> {
         self.conn.execute("CREATE TABLE IF NOT EXISTS key_value (
             key BLOB PRIMARY KEY,
             value BLOB,
-            pinned INTEGER
+            pinned INTEGER,
+            live INTEGER
         )").map_err(|e| e.to_string())?;
         self.conn.execute("CREATE TABLE IF NOT EXISTS key_dep (
             key BLOB PRIMARY KEY,
             dep BLOB
         )").map_err(|e| e.to_string())?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS key_dep_dep ON key_dep (dep)").map_err(|e| e.to_string())?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS key_value_live ON key_value (live)").map_err(|e| e.to_string())?;
+        Ok(())
+    }
+
+    fn clear_value_deps_raw(&mut self, key: &[u8]) -> Result<(), String> {
+        let mut stmt = self.conn.prepare("DELETE FROM key_value WHERE key = :key").unwrap()
+            .bind_by_name(":key", key).unwrap();
+        if stmt.next().unwrap() != State::Done {
+            return Err("Failed to delete value".to_string());
+        }
+        stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key").unwrap()
+            .bind_by_name(":key", key).unwrap();
+        if stmt.next().unwrap() != State::Done {
+            return Err("Failed to delete dependencies".to_string());
+        }
+        stmt = self.conn.prepare("UPDATE key_value SET live = (pinned OR EXISTS (SELECT * FROM key_dep WHERE dep = key_value.key)) WHERE EXISTS (SELECT * FROM key_dep WHERE dep = :key)").unwrap()
+            .bind_by_name(":key", key).unwrap();
+        if stmt.next().unwrap() != State::Done {
+            return Err("Failed to update live".to_string());
+        }
         Ok(())
     }
 }
@@ -56,7 +78,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
     fn set_value_deps(&mut self, key: M::Key, value: M::Value, deps: Vec<M::Key>) -> Result<(), String> {
         let key = rmp_serde::to_vec(&key).unwrap();
         let value = rmp_serde::to_vec(&value).unwrap();
-        let mut stmt = self.conn.prepare("INSERT INTO key_value (key, value, pinned) VALUES (:key, :value, false)").unwrap()
+        let mut stmt = self.conn.prepare("INSERT INTO key_value (key, value, pinned, live) VALUES (:key, :value, false, false)").unwrap()
             .bind_by_name(":key", &*key).unwrap()
             .bind_by_name(":value", &*value).unwrap();
         if stmt.next().unwrap() != State::Done {
@@ -68,9 +90,12 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 .bind_by_name(":key", &*key).unwrap()
                 .bind_by_name(":dep", &*dep).unwrap();
             if stmt.next().unwrap() != State::Done {
-                continue;
-            } else {
                 return Err("Failed to insert dependency".to_string());
+            }
+            stmt = self.conn.prepare("UPDATE key_value SET live = true WHERE key = :dep").unwrap()
+                .bind_by_name(":dep", &*dep).unwrap();
+            if stmt.next().unwrap() != State::Done {
+                return Err("Failed to update dependency".to_string());
             }
         }
         Ok(())
@@ -88,32 +113,37 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
         let mut stmt = self.conn.prepare("UPDATE key_value SET pinned = :pinned WHERE key = :key").unwrap()
             .bind_by_name(":key", &*key).unwrap()
             .bind_by_name(":pinned", pin as i64).unwrap();
-        if stmt.next().unwrap() == State::Done {
-            Ok(())
-        } else {
-            Err("Failed to update pin".to_string())
+        if stmt.next().unwrap() != State::Done {
+            return Err("Failed to update pin".to_string());
         }
+        stmt = self.conn.prepare("UPDATE key_value SET live = (pinned OR EXISTS (SELECT * FROM key_dep WHERE dep = key_value.key)) WHERE key = :key").unwrap()
+            .bind_by_name(":key", &*key).unwrap();
+        if stmt.next().unwrap() != State::Done {
+            return Err("Failed to update live".to_string());
+        }
+        Ok(())
     }
 
     fn clear_value_deps(&mut self, key: &M::Key) -> Result<(), String> {
         let key = rmp_serde::to_vec(key).unwrap();
-        let mut stmt = self.conn.prepare("DELETE FROM key_value WHERE key = :key").unwrap()
-            .bind_by_name(":key", &*key).unwrap();
-        if stmt.next().unwrap() != State::Done {
-            return Err("Failed to delete value".to_string());
-        }
-        stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key").unwrap()
-            .bind_by_name(":key", &*key).unwrap();
-        if stmt.next().unwrap() == State::Done {
-            Ok(())
-        } else {
-            Err("Failed to delete dependencies".to_string())
-        }
+        self.clear_value_deps_raw(&*key)
     }
 
     fn clear_unpinned(&mut self) -> Result<(), String> {
-        self.conn.execute("DELETE FROM key_value WHERE pinned = false").map_err(|e| e.to_string())?;
-        self.conn.execute("DELETE FROM key_dep WHERE key NOT IN (SELECT key FROM key_value)").map_err(|e| e.to_string())?;
-        Ok(())
+        loop {
+            let mut to_delete = Vec::new();
+            {
+                let mut stmt = self.conn.prepare("SELECT * FROM key_value WHERE live = false").unwrap();
+                while stmt.next().unwrap() == State::Row {
+                    to_delete.push(stmt.read::<Vec<u8>>(0).unwrap());
+                }
+            }
+            if to_delete.is_empty() {
+                return Ok(());
+            }
+            for del_key in to_delete {
+                self.clear_value_deps_raw(&del_key)?;
+            }
+        }
     }
 }
