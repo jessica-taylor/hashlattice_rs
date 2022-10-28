@@ -53,7 +53,7 @@ impl<CI: TaggedMapping, L: TaggedMapping> TaggedMapping for LatDBMapping<CI, L> 
 }
 
 pub struct LatStore<CI: TaggedMapping, L: TaggedMapping> {
-    db: Arc<Mutex<dyn DepDB<LatDBMapping<CI, L>>>>,
+    db: Box<Mutex<dyn DepDB<LatDBMapping<CI, L>>>>,
     comp_lib: Arc<dyn ComputationLibrary<CI>>,
     lat_lib: Arc<dyn LatticeLibrary<CI, L>>,
     backup_hashlookup: Box<dyn HashLookup>,
@@ -66,7 +66,7 @@ impl<CI: TaggedMapping, L: TaggedMapping> LatStore<CI, L> {
                lat_lib: impl LatticeLibrary<CI, L> + 'static,
                backup_hashlookup: impl HashLookup + 'static) -> Self {
         Self {
-            db: Arc::new(Mutex::new(db)),
+            db: Box::new(Mutex::new(db)),
             comp_lib: Arc::new(comp_lib),
             lat_lib: Arc::new(lat_lib),
             backup_hashlookup: Box::new(backup_hashlookup),
