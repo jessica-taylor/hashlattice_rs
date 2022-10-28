@@ -35,7 +35,7 @@ impl<M: TaggedMapping> SqlDepDB<M> {
     }
 
     fn set_live_raw(&mut self, key: &[u8]) -> Result<(), String> {
-        let mut stmt = self.conn.prepare("UPDATE key_value SET live = (pinned OR EXISTS (SELECT 1 FROM key_dep WHERE key_dep.dep = key_value.key)) WHERE key = :key").unwrap()
+        let mut stmt = self.conn.prepare("UPDATE key_value SET live = (pinned OR EXISTS (SELECT 1 FROM key_dep WHERE dep = key_value.key)) WHERE key = :key").unwrap()
             .bind_by_name(":key", key).unwrap();
         if stmt.next().unwrap() != State::Done {
             return Err("set_live_raw: unexpected result".to_string());
@@ -129,7 +129,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
 
     fn is_pinned(&self, key: &M::Key) -> Result<bool, String> {
         let key = rmp_serde::to_vec(key).unwrap();
-        let mut stmt = self.conn.prepare("SELECT * FROM key_value WHERE key = :key AND pinned = true").unwrap()
+        let mut stmt = self.conn.prepare("SELECT 1 FROM key_value WHERE key = :key AND pinned = true").unwrap()
             .bind_by_name(":key", &*key).unwrap();
         Ok(stmt.next().unwrap() == State::Row)
     }
@@ -157,7 +157,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
         loop {
             let mut to_delete = Vec::new();
             {
-                let mut stmt = self.conn.prepare("SELECT * FROM key_value WHERE live = false").unwrap();
+                let mut stmt = self.conn.prepare("SELECT key FROM key_value WHERE live = false").unwrap();
                 while stmt.next().unwrap() == State::Row {
                     to_delete.push(stmt.read::<Vec<u8>>(0).unwrap());
                 }
