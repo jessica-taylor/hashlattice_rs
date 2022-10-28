@@ -159,6 +159,7 @@ impl<CI: TaggedMapping, L: TaggedMapping> LatticeContext<CI, L> for LatStore<CI,
         let new_value = match self.get_lattice(key) {
             None => value,
             Some(old_value) => {
+                self.lat_lib.clone().check_elem(key, &value, self)?;
                 let joined = self.lat_lib.clone().join(key, &old_value, &value, self)?;
                 if joined == old_value {
                     return Ok(old_value);
