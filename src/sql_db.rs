@@ -18,16 +18,17 @@ impl<M: TaggedMapping> SqlDepDB<M> {
             phantom: PhantomData,
         }
     }
-    fn initialize(&self) {
+    fn initialize(&self) -> Result<(), String>{
         self.conn.execute("CREATE TABLE IF NOT EXISTS key_value (
             key BLOB PRIMARY KEY,
             value BLOB,
             pinned INTEGER
-        )").unwrap();
+        )").map_err(|e| e.to_string())?;
         self.conn.execute("CREATE TABLE IF NOT EXISTS key_dep (
             key BLOB PRIMARY KEY,
             dep BLOB
-        )").unwrap();
+        )").map_err(|e| e.to_string())?;
+        Ok(())
     }
 }
 
@@ -111,15 +112,8 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
     }
 
     fn clear_unpinned(&mut self) -> Result<(), String> {
-        let mut stmt = self.conn.prepare("DELETE FROM key_value WHERE pinned = false").unwrap();
-        if stmt.next().unwrap() != State::Done {
-            return Err("Failed to delete values".to_string())
-        }
-        stmt = self.conn.prepare("DELETE FROM key_dep WHERE key NOT IN (SELECT key FROM key_value)").unwrap();
-        if stmt.next().unwrap() == State::Done {
-            Ok(())
-        } else {
-            Err("Failed to delete dependencies".to_string())
-        }
+        self.conn.execute("DELETE FROM key_value WHERE pinned = false").map_err(|e| e.to_string())?;
+        self.conn.execute("DELETE FROM key_dep WHERE key NOT IN (SELECT key FROM key_value)").map_err(|e| e.to_string())?;
+        Ok(())
     }
 }
