@@ -40,15 +40,15 @@ impl<M: TaggedMapping> SqlDepDB<M> {
         if stmt.next().unwrap() != State::Done {
             return Err("Failed to delete value".to_string());
         }
-        stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key").unwrap()
-            .bind_by_name(":key", key).unwrap();
-        if stmt.next().unwrap() != State::Done {
-            return Err("Failed to delete dependencies".to_string());
-        }
         stmt = self.conn.prepare("UPDATE key_value SET live = (pinned OR EXISTS (SELECT * FROM key_dep WHERE dep = key_value.key)) WHERE EXISTS (SELECT * FROM key_dep WHERE dep = :key)").unwrap()
             .bind_by_name(":key", key).unwrap();
         if stmt.next().unwrap() != State::Done {
             return Err("Failed to update live".to_string());
+        }
+        stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key").unwrap()
+            .bind_by_name(":key", key).unwrap();
+        if stmt.next().unwrap() != State::Done {
+            return Err("Failed to delete dependencies".to_string());
         }
         Ok(())
     }
