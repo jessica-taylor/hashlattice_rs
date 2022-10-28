@@ -124,7 +124,7 @@ impl<CI: TaggedMapping, L: TaggedMapping> ImmutComputationContext<CI> for LatSto
         self.deps_stack.push(Vec::new());
         match self.comp_lib.clone().eval_immut(key, self) {
             Err(err) => {
-                self.deps_stack.pop();
+                self.deps_stack.pop().unwrap();
                 Err(err)
             }
             Ok(value) => {
@@ -169,7 +169,7 @@ impl<CI: TaggedMapping, L: TaggedMapping> LatticeContext<CI, L> for LatStore<CI,
         self.deps_stack.push(Vec::new());
         match self.lat_lib.clone().check_elem(key, &new_value, self) {
             Err(err) => {
-                self.deps_stack.pop();
+                self.deps_stack.pop().unwrap();
                 Err(err)
             }
             Ok(()) => {

@@ -6,11 +6,12 @@ use tokio::net::{TcpListener, TcpStream};
 use tungstenite::protocol::Message;
 
 
+use crate::error::{Res, str_error};
 use crate::signalmessage::{SignalMessageToServer};
 
 // https://github.com/snapview/tokio-tungstenite/blob/master/examples/autobahn-server.rs
 
-async fn runserver() -> Result<(), String> {
+async fn runserver() -> Res<()> {
     // let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8080".to_string());
     let addr = "127.0.0.1:2020";
 
@@ -37,16 +38,13 @@ async fn accept_connection(stream: TcpStream) {
     }
 }
 
-async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<(), String> {
-    let mut ws_stream = tokio_tungstenite::accept_async(stream)
-        .await
-        .expect("Error during the websocket handshake occurred");
+async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Res<()> {
+    let mut ws_stream = tokio_tungstenite::accept_async(stream).await?;
     while let Some(msg) = ws_stream.next().await {
-        let msg = msg.map_err(|e| e.to_string())?;
-        match msg {
+        match msg? {
             Message::Binary(bs) => {
-                let _msg: SignalMessageToServer = rmp_serde::from_slice(&bs).map_err(|e| e.to_string())?;
-                println!("Received a message from {}: {:?}", peer, bs);
+                let msg: SignalMessageToServer = rmp_serde::from_slice(&bs)?;
+                println!("Received a message from {}: {:?}", peer, msg);
                 // ...
             }
             other => {
