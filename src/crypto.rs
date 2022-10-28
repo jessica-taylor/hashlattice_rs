@@ -30,7 +30,7 @@ pub struct Hash<T> {
     /// The hash code.
     pub code: HashCode,
     /// Phantom data for the type `T`.
-    pub(crate) phantom: std::marker::PhantomData<fn() -> T>,
+    pub(crate) phantom: std::marker::PhantomData<T>,
 }
 
 impl<T> Default for Hash<T> {

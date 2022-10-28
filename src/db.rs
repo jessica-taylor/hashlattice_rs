@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
+
 
 use core::fmt::{Debug, Formatter};
 
@@ -10,13 +11,15 @@ use crate::lattice::{HashLookup, LatticeLibrary, ComputationLibrary, ImmutComput
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
 /// a key-value store with key-key dependencies; auto-removes unpinned, non-depended-on keys
-pub trait DepDB<M: TaggedMapping>: Send + Sync {
+pub trait DepDB<M: TaggedMapping> : Send {
 
-    fn has_value(&self, key: &M::Key) -> bool;
+    fn has_value(&self, key: &M::Key) -> Result<bool, String>;
 
     fn get_value(&self, key: &M::Key) -> Result<Option<M::Value>, String>;
 
     fn set_value_deps(&mut self, key: M::Key, value: M::Value, deps: Vec<M::Key>) -> Result<(), String>;
+
+    fn is_pinned(&self, key: &M::Key) -> Result<bool, String>;
 
     fn set_pin(&mut self, key: &M::Key, pin: bool) -> Result<(), String>;
 
@@ -50,7 +53,7 @@ impl<CI: TaggedMapping, L: TaggedMapping> TaggedMapping for LatDBMapping<CI, L> 
 }
 
 pub struct LatStore<CI: TaggedMapping, L: TaggedMapping> {
-    db: Box<dyn DepDB<LatDBMapping<CI, L>>>,
+    db: Arc<Mutex<dyn DepDB<LatDBMapping<CI, L>>>>,
     comp_lib: Arc<dyn ComputationLibrary<CI>>,
     lat_lib: Arc<dyn LatticeLibrary<CI, L>>,
     backup_hashlookup: Box<dyn HashLookup>,
@@ -63,7 +66,7 @@ impl<CI: TaggedMapping, L: TaggedMapping> LatStore<CI, L> {
                lat_lib: impl LatticeLibrary<CI, L> + 'static,
                backup_hashlookup: impl HashLookup + 'static) -> Self {
         Self {
-            db: Box::new(db),
+            db: Arc::new(Mutex::new(db)),
             comp_lib: Arc::new(comp_lib),
             lat_lib: Arc::new(lat_lib),
             backup_hashlookup: Box::new(backup_hashlookup),
@@ -71,17 +74,21 @@ impl<CI: TaggedMapping, L: TaggedMapping> LatStore<CI, L> {
         }
     }
 
+    fn get_db(&self) -> MutexGuard<dyn DepDB<LatDBMapping<CI, L>> + 'static> {
+        self.db.lock().unwrap()
+    }
+
     pub fn set_hash_pin(&mut self, hash: &HashCode, pin: bool) -> Result<(), String> {
-        self.db.set_pin(&LatDBKey::Hash(hash.clone()), pin)
+        self.get_db().set_pin(&LatDBKey::Hash(hash.clone()), pin)
     }
     pub fn set_immut_pin(&mut self, key: &CI::Key, pin: bool) -> Result<(), String> {
-        self.db.set_pin(&LatDBKey::Immut(key.clone()), pin)
+        self.get_db().set_pin(&LatDBKey::Immut(key.clone()), pin)
     }
     pub fn set_lattice_pin(&mut self, key: &L::Key, pin: bool) -> Result<(), String> {
-        self.db.set_pin(&LatDBKey::Lattice(key.clone()), pin)
+        self.get_db().set_pin(&LatDBKey::Lattice(key.clone()), pin)
     }
     pub fn clear_unpinned(&mut self) -> Result<(), String> {
-        self.db.clear_unpinned()
+        self.get_db().clear_unpinned()
     }
 }
 
@@ -90,7 +97,8 @@ impl<CI: TaggedMapping, L: TaggedMapping> HashLookup for LatStore<CI, L> {
         if let Some(deps) = self.deps_stack.last_mut() {
             deps.push(LatDBKey::Hash(hash));
         }
-        match self.db.get_value(&LatDBKey::Hash(hash))? {
+        let res = self.get_db().get_value(&LatDBKey::Hash(hash))?;
+        match res {
             Some(LatDBValue::Hash(bytes)) => Ok(bytes),
             _ => {
                 let val = self.backup_hashlookup.hash_lookup(hash)?;
@@ -111,7 +119,7 @@ impl<CI: TaggedMapping, L: TaggedMapping> ImmutComputationContext<CI> for LatSto
             deps.push(LatDBKey::Immut(key.clone()));
         }
         let immut_key = LatDBKey::Immut(key.clone());
-        if let Some(LatDBValue::Immut(value)) = self.db.get_value(&immut_key)? {
+        if let Some(LatDBValue::Immut(value)) = self.get_db().get_value(&immut_key)? {
             return Ok(value);
         }
         self.deps_stack.push(Vec::new());
@@ -122,7 +130,7 @@ impl<CI: TaggedMapping, L: TaggedMapping> ImmutComputationContext<CI> for LatSto
             }
             Ok(value) => {
                 let deps = self.deps_stack.pop().unwrap();
-                self.db.set_value_deps(immut_key, LatDBValue::Immut(value.clone()), deps)?;
+                self.get_db().set_value_deps(immut_key, LatDBValue::Immut(value.clone()), deps)?;
                 Ok(value)
             }
         }
@@ -133,8 +141,8 @@ impl<CI: TaggedMapping, L: TaggedMapping> MutComputationContext<CI> for LatStore
     fn hash_put(&mut self, value: Vec<u8>) -> Result<HashCode, String> {
         let hash = hash_of_bytes(&value);
         let key = LatDBKey::Hash(hash);
-        if !self.db.has_value(&key) {
-            self.db.set_value_deps(key.clone(), LatDBValue::Hash(value), Vec::new())?;
+        if !self.get_db().has_value(&key)? {
+            self.get_db().set_value_deps(key.clone(), LatDBValue::Hash(value), Vec::new())?;
         }
         Ok(hash)
     }
@@ -142,7 +150,7 @@ impl<CI: TaggedMapping, L: TaggedMapping> MutComputationContext<CI> for LatStore
 
 impl<CI: TaggedMapping, L: TaggedMapping> LatticeContext<CI, L> for LatStore<CI, L> {
     fn get_lattice(&self, key: &L::Key) -> Option<L::Value> {
-        match self.db.get_value(&LatDBKey::Lattice(key.clone())) {
+        match self.get_db().get_value(&LatDBKey::Lattice(key.clone())) {
             Ok(Some(LatDBValue::Lattice(value))) => Some(value),
             _ => None,
         }
@@ -167,7 +175,7 @@ impl<CI: TaggedMapping, L: TaggedMapping> LatticeContext<CI, L> for LatStore<CI,
             }
             Ok(()) => {
                 let deps = self.deps_stack.pop().unwrap();
-                self.db.set_value_deps(LatDBKey::Lattice(key.clone()), LatDBValue::Lattice(new_value.clone()), deps)?;
+                self.get_db().set_value_deps(LatDBKey::Lattice(key.clone()), LatDBValue::Lattice(new_value.clone()), deps)?;
                 Ok(new_value)
             }
         }
