@@ -1,6 +1,6 @@
 use hashlattice::error::{Res, str_error};
 use hashlattice::tagged_mapping::TaggedMapping;
-use hashlattice::lattice::{HashLookup, EmptyHashLookup, ComputationLibrary, EmptyComputationLibrary, ImmutComputationContext, MutComputationContext, LatticeLibrary, EmptyLatticeLibrary};
+use hashlattice::lattice::{HashLookup, EmptyHashLookup, ComputationLibrary, EmptyComputationLibrary, ImmutComputationContext, MutComputationContext, LatticeLibrary, EmptyLatticeLibrary, LatticeContext};
 use hashlattice::db::{DepDB, LatStore, LatDBMapping};
 use hashlattice::sql_db::SqlDepDB;
 
@@ -38,7 +38,13 @@ impl LatticeLibrary<EmptyMapping, MaxTupleMapping> for MaxTupleLatLibrary {
 
 #[tokio::test]
 async fn test_db() {
-    let db = SqlDepDB::<LatDBMapping<EmptyMapping, MaxTupleMapping>>::new(":memory:").unwrap();
+    let mut db = SqlDepDB::<LatDBMapping<EmptyMapping, MaxTupleMapping>>::new(":memory:").unwrap();
     db.initialize().unwrap();
-    let store = LatStore::new(db, EmptyComputationLibrary, MaxTupleLatLibrary(3), EmptyHashLookup);
+    let mut store = LatStore::new(db, EmptyComputationLibrary, MaxTupleLatLibrary(3), EmptyHashLookup);
+    let key = "test".to_string();
+    assert_eq!(None, store.get_lattice(&key));
+    assert_eq!(vec![1, 2, 0], store.join_lattice(&key, vec![1, 2, 0]).unwrap());
+    assert_eq!(Some(vec![1, 2, 0]), store.get_lattice(&key));
+    assert_eq!(vec![4, 2, 1], store.join_lattice(&key, vec![4, 0, 1]).unwrap());
+    assert_eq!(Some(vec![4, 2, 1]), store.get_lattice(&key));
 }

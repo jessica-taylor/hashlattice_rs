@@ -20,7 +20,7 @@ impl<M: TaggedMapping> SqlDepDB<M> {
             phantom: PhantomData,
         })
     }
-    pub fn initialize(&self) -> Res<()>{
+    pub fn initialize(&mut self) -> Res<()>{
         self.conn.execute("CREATE TABLE IF NOT EXISTS key_value (
             key BLOB PRIMARY KEY,
             value BLOB,
