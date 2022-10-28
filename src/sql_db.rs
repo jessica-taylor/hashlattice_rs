@@ -44,6 +44,12 @@ impl<M: TaggedMapping> SqlDepDB<M> {
         Ok(())
     }
 
+    fn is_pinned_raw(&self, key: &[u8]) -> Result<bool, String> {
+        let mut stmt = self.conn.prepare("SELECT 1 FROM key_value WHERE key = :key AND pinned = true").unwrap()
+            .bind_by_name(":key", &*key).unwrap();
+        Ok(stmt.next().unwrap() == State::Row)
+    }
+
     fn clear_value_deps_raw(&mut self, key: &[u8]) -> Result<(), String> {
         {
             let mut stmt = self.conn.prepare("DELETE FROM key_value WHERE key = :key").unwrap()
@@ -90,9 +96,10 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
 
     fn set_value_deps(&mut self, key: M::Key, value: M::Value, deps: Vec<M::Key>) -> Result<(), String> {
         let key = rmp_serde::to_vec(&key).unwrap();
+        let already_pinned = self.is_pinned_raw(&key)?;
         let mut old_deps = Vec::new();
         {
-            let mut stmt = self.conn.prepare("DELET FROM key_dep WHERE key = :key RETURNING dep").unwrap()
+            let mut stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key RETURNING dep").unwrap()
                 .bind_by_name(":key", &*key).unwrap();
             while let State::Row = stmt.next().unwrap() {
                 let dep = stmt.read::<Vec<u8>>(0).unwrap();
@@ -101,9 +108,10 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
         }
         let value = rmp_serde::to_vec(&value).unwrap();
         {
-            let mut stmt = self.conn.prepare("INSERT INTO key_value (key, value, pinned, live) VALUES (:key, :value, false, false)").unwrap()
+            let mut stmt = self.conn.prepare("INSERT INTO key_value (key, value, pinned, live) VALUES (:key, :value, :pinned, false)").unwrap()
                 .bind_by_name(":key", &*key).unwrap()
-                .bind_by_name(":value", &*value).unwrap();
+                .bind_by_name(":value", &*value).unwrap()
+                .bind_by_name(":pinned", already_pinned as i64).unwrap();
             if stmt.next().unwrap() != State::Done {
                 return Err("Failed to insert value".to_string());
             }
@@ -130,9 +138,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
 
     fn is_pinned(&self, key: &M::Key) -> Result<bool, String> {
         let key = rmp_serde::to_vec(key).unwrap();
-        let mut stmt = self.conn.prepare("SELECT 1 FROM key_value WHERE key = :key AND pinned = true").unwrap()
-            .bind_by_name(":key", &*key).unwrap();
-        Ok(stmt.next().unwrap() == State::Row)
+        self.is_pinned_raw(&key)
     }
 
     fn set_pin(&mut self, key: &M::Key, pin: bool) -> Result<(), String> {
