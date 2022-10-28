@@ -99,11 +99,18 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
     fn set_value_deps(&mut self, key: M::Key, value: M::Value, deps: Vec<M::Key>) -> Res<()> {
         let key = rmp_serde::to_vec(&key)?;
         let already_pinned = self.is_pinned_raw(&key)?;
+        {
+            let mut stmt = self.conn.prepare("DELETE FROM key_value WHERE key = :key")?
+                .bind_by_name(":key", &*key)?;
+            if stmt.next()? != State::Done {
+                return str_error("Failed to delete value");
+            }
+        }
         let mut old_deps = BTreeSet::new();
         {
             let mut stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key RETURNING dep")?
                 .bind_by_name(":key", &*key)?;
-            while let State::Row = stmt.next()? {
+            while stmt.next()? == State::Row {
                 let dep = stmt.read::<Vec<u8>>(0)?;
                 old_deps.insert(dep);
             }
