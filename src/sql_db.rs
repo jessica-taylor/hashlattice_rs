@@ -26,9 +26,10 @@ impl<M: TaggedMapping> SqlDepDB<M> {
             live INTEGER
         )").map_err(|e| e.to_string())?;
         self.conn.execute("CREATE TABLE IF NOT EXISTS key_dep (
-            key BLOB PRIMARY KEY,
+            key BLOB,
             dep BLOB
         )").map_err(|e| e.to_string())?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS key_dep_key ON key_dep (key)").map_err(|e| e.to_string())?;
         self.conn.execute("CREATE INDEX IF NOT EXISTS key_dep_dep ON key_dep (dep)").map_err(|e| e.to_string())?;
         self.conn.execute("CREATE INDEX IF NOT EXISTS key_value_live ON key_value (live)").map_err(|e| e.to_string())?;
         Ok(())
@@ -105,6 +106,13 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 .bind_by_name(":value", &*value).unwrap();
             if stmt.next().unwrap() != State::Done {
                 return Err("Failed to insert value".to_string());
+            }
+        }
+        {
+            let mut stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key").unwrap()
+                .bind_by_name(":key", &*key).unwrap();
+            if stmt.next().unwrap() != State::Done {
+                return Err("Failed to delete old deps".to_string());
             }
         }
         for dep in deps {
