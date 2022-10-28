@@ -5,15 +5,15 @@ use std::convert::TryInto;
 use std::default::Default;
 use std::marker::PhantomData;
 
-use rand::thread_rng;
+
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use rsa::pkcs1v15::{SigningKey, VerifyingKey};
 use rsa::pkcs1v15::Signature as RsaSignature;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use rsa::PublicKey as RsaPublicKeyTrait;
-use signature::{Signer, Verifier, DigestVerifier};
-use signature::Signature as SignatureTrait;
+use signature::{Signer, Verifier};
+
 
 /// A SHA256 hash code.
 pub type HashCode = [u8; 32];

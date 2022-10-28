@@ -1,5 +1,5 @@
 use std::marker::PhantomData;
-use sqlite::{Connection, State, Statement};
+use sqlite::{Connection, State};
 
 use crate::tagged_mapping::TaggedMapping;
 use crate::db::DepDB;

@@ -1,12 +1,12 @@
 use std::net::SocketAddr;
 
-use futures::{future, StreamExt, TryStreamExt};
+use futures::{StreamExt, TryStreamExt};
 
 use tokio::net::{TcpListener, TcpStream};
 use tungstenite::protocol::Message;
-use tokio_tungstenite::WebSocketStream;
 
-use crate::signalmessage::{SignalMessageToServer, SignalMessageToClient};
+
+use crate::signalmessage::{SignalMessageToServer};
 
 // https://github.com/snapview/tokio-tungstenite/blob/master/examples/autobahn-server.rs
 
@@ -45,7 +45,7 @@ async fn handle_connection(peer: SocketAddr, stream: TcpStream) -> Result<(), St
         let msg = msg.map_err(|e| e.to_string())?;
         match msg {
             Message::Binary(bs) => {
-                let msg: SignalMessageToServer = rmp_serde::from_slice(&bs).map_err(|e| e.to_string())?;
+                let _msg: SignalMessageToServer = rmp_serde::from_slice(&bs).map_err(|e| e.to_string())?;
                 println!("Received a message from {}: {:?}", peer, bs);
                 // ...
             }

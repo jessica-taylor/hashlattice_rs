@@ -1,14 +1,14 @@
 use std::sync::{Arc, Mutex, MutexGuard};
 
 
-use core::fmt::{Debug, Formatter};
+use core::fmt::{Debug};
 
-use async_trait::async_trait;
+
 
 use crate::crypto::{HashCode, hash_of_bytes};
 use crate::tagged_mapping::TaggedMapping;
 use crate::lattice::{HashLookup, LatticeLibrary, ComputationLibrary, ImmutComputationContext, MutComputationContext, LatticeContext};
-use serde::{Serialize, Deserialize, de::DeserializeOwned};
+use serde::{Serialize, Deserialize};
 
 /// a key-value store with key-key dependencies; auto-removes unpinned, non-depended-on keys
 pub trait DepDB<M: TaggedMapping> : Send {
