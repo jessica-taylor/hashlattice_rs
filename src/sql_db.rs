@@ -7,20 +7,20 @@ use crate::tagged_mapping::TaggedMapping;
 use crate::db::DepDB;
 
 
-struct SqlDepDB<M: TaggedMapping> {
+pub struct SqlDepDB<M: TaggedMapping> {
     conn: Connection,
     phantom: PhantomData<fn() -> M>,
 }
 
 impl<M: TaggedMapping> SqlDepDB<M> {
-    fn new(path: &str) -> Res<SqlDepDB<M>> {
+    pub fn new(path: &str) -> Res<SqlDepDB<M>> {
         let conn = Connection::open(path)?;
         Ok(SqlDepDB {
             conn,
             phantom: PhantomData,
         })
     }
-    fn initialize(&self) -> Res<()>{
+    pub fn initialize(&self) -> Res<()>{
         self.conn.execute("CREATE TABLE IF NOT EXISTS key_value (
             key BLOB PRIMARY KEY,
             value BLOB,
