@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::marker::PhantomData;
 use sqlite::{Connection, State};
 
@@ -76,7 +77,7 @@ impl<M: TaggedMapping> SqlDepDB<M> {
 impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
     fn has_value(&self, key: &M::Key) -> Result<bool, String> {
         let key = rmp_serde::to_vec(key).unwrap();
-        let mut stmt = self.conn.prepare("SELECT value FROM key_value WHERE key = :key").unwrap()
+        let mut stmt = self.conn.prepare("SELECT 1 FROM key_value WHERE key = :key").unwrap()
             .bind_by_name(":key", &*key).unwrap();
         Ok(stmt.next().unwrap() == State::Row)
     }
@@ -97,13 +98,13 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
     fn set_value_deps(&mut self, key: M::Key, value: M::Value, deps: Vec<M::Key>) -> Result<(), String> {
         let key = rmp_serde::to_vec(&key).unwrap();
         let already_pinned = self.is_pinned_raw(&key)?;
-        let mut old_deps = Vec::new();
+        let mut old_deps = BTreeSet::new();
         {
             let mut stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key RETURNING dep").unwrap()
                 .bind_by_name(":key", &*key).unwrap();
             while let State::Row = stmt.next().unwrap() {
                 let dep = stmt.read::<Vec<u8>>(0).unwrap();
-                old_deps.push(dep);
+                old_deps.insert(dep);
             }
         }
         let value = rmp_serde::to_vec(&value).unwrap();
@@ -116,22 +117,26 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 return Err("Failed to insert value".to_string());
             }
         }
+        let mut deps_set = BTreeSet::new();
         for dep in deps {
             let dep = rmp_serde::to_vec(&dep).unwrap();
-            let mut stmt = self.conn.prepare("INSERT INTO key_dep (key, dep) VALUES (:key, :dep)").unwrap()
-                .bind_by_name(":key", &*key).unwrap()
-                .bind_by_name(":dep", &*dep).unwrap();
-            if stmt.next().unwrap() != State::Done {
-                return Err("Failed to insert dependency".to_string());
+            {
+                let mut stmt = self.conn.prepare("INSERT INTO key_dep (key, dep) VALUES (:key, :dep)").unwrap()
+                    .bind_by_name(":key", &*key).unwrap()
+                    .bind_by_name(":dep", &*dep).unwrap();
+                if stmt.next().unwrap() != State::Done {
+                    return Err("Failed to insert dependency".to_string());
+                }
             }
-            stmt = self.conn.prepare("UPDATE key_value SET live = true WHERE key = :dep").unwrap()
-                .bind_by_name(":dep", &*dep).unwrap();
-            if stmt.next().unwrap() != State::Done {
-                return Err("Failed to update dependency".to_string());
+            if !old_deps.contains(&dep) {
+                self.set_live_raw(&dep)?;
             }
+            deps_set.insert(dep);
         }
         for dep in old_deps {
-            self.set_live_raw(&dep)?;
+            if !deps_set.contains(&dep) {
+                self.set_live_raw(&dep)?;
+            }
         }
         Ok(())
     }
