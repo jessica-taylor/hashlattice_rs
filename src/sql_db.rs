@@ -92,7 +92,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
         let key = rmp_serde::to_vec(&key).unwrap();
         let mut old_deps = Vec::new();
         {
-            let mut stmt = self.conn.prepare("SELECT dep FROM key_dep WHERE key = :key").unwrap()
+            let mut stmt = self.conn.prepare("DELET FROM key_dep WHERE key = :key RETURNING dep").unwrap()
                 .bind_by_name(":key", &*key).unwrap();
             while let State::Row = stmt.next().unwrap() {
                 let dep = stmt.read::<Vec<u8>>(0).unwrap();
@@ -106,13 +106,6 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 .bind_by_name(":value", &*value).unwrap();
             if stmt.next().unwrap() != State::Done {
                 return Err("Failed to insert value".to_string());
-            }
-        }
-        {
-            let mut stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key").unwrap()
-                .bind_by_name(":key", &*key).unwrap();
-            if stmt.next().unwrap() != State::Done {
-                return Err("Failed to delete old deps".to_string());
             }
         }
         for dep in deps {
