@@ -77,6 +77,15 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
 
     fn set_value_deps(&mut self, key: M::Key, value: M::Value, deps: Vec<M::Key>) -> Result<(), String> {
         let key = rmp_serde::to_vec(&key).unwrap();
+        let mut old_deps = Vec::new();
+        {
+            let mut stmt = self.conn.prepare("SELECT dep FROM key_dep WHERE key = :key").unwrap()
+                .bind_by_name(":key", &*key).unwrap();
+            while let State::Row = stmt.next().unwrap() {
+                let dep = stmt.read::<Vec<u8>>(0).unwrap();
+                old_deps.push(dep);
+            }
+        }
         let value = rmp_serde::to_vec(&value).unwrap();
         let mut stmt = self.conn.prepare("INSERT INTO key_value (key, value, pinned, live) VALUES (:key, :value, false, false)").unwrap()
             .bind_by_name(":key", &*key).unwrap()
@@ -93,6 +102,13 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 return Err("Failed to insert dependency".to_string());
             }
             stmt = self.conn.prepare("UPDATE key_value SET live = true WHERE key = :dep").unwrap()
+                .bind_by_name(":dep", &*dep).unwrap();
+            if stmt.next().unwrap() != State::Done {
+                return Err("Failed to update dependency".to_string());
+            }
+        }
+        for dep in old_deps {
+            stmt = self.conn.prepare("UPDATE key_value SET live = (pinned OR EXISTS (SELECT * FROM key_dep WHERE dep = key_value.key)) WHERE key = :dep").unwrap()
                 .bind_by_name(":dep", &*dep).unwrap();
             if stmt.next().unwrap() != State::Done {
                 return Err("Failed to update dependency".to_string());
