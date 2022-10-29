@@ -48,8 +48,6 @@ pub trait LatticeLibrary<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> 
 
     fn join(&self, key: &L::Key, a: &L::Value, b: &L::Value, ctx: &dyn LatticeMutContext<C, L, LC>) -> Res<L::Value>;
 
-    fn bottom(&self, key: &L::Key, ctx: &dyn ComputationMutContext<C>) -> Res<L::Value>;
-
     fn transport(&self, key: &L::Key, value: &L::Value, old_ctx: &dyn LatticeImmutContext<C, L, LC>, new_ctx: &dyn LatticeMutContext<C, L, LC>) -> Res<L::Value> {
         Ok(value.clone())
     }
@@ -71,7 +69,7 @@ pub trait LatticeLibrary<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> 
 
 pub trait LatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> : ComputationImmutContext<C> {
 
-    fn lattice_lookup<'a>(&'a self, key: &L::Key) -> Res<(L::Value, Box<dyn 'a + LatticeImmutContext<C, L, LC>>)>;
+    fn lattice_lookup<'a>(&'a self, key: &L::Key) -> Res<Option<(L::Value, Box<dyn 'a + LatticeImmutContext<C, L, LC>>)>>;
 
     fn eval_lat_computation<'a>(&'a self, key: &LC::Key) -> Res<(LC::Value, Box<dyn 'a + LatticeImmutContext<C, L, LC>>)>;
 
@@ -80,8 +78,6 @@ pub trait LatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapp
 pub trait LatticeMutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping>: ComputationMutContext<C> + LatticeImmutContext<C, L, LC> {
 
     fn lattice_join(&self, key: &L::Key, value: &L::Value, ctx_other: &mut dyn LatticeImmutContext<C, L, LC>) -> Res<L::Value>;
-
-    fn lattice_bottom(&self, key: &L::Key) -> Res<L::Value>;
 
 }
 
