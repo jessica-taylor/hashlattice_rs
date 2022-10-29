@@ -314,7 +314,7 @@ impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> LatticeImmutContext<
 
 impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> LatticeMutContext<C, L, LC> for LatStore<C, L, LC> {
 
-    fn lattice_join(&self, key: &L::Key, value: &L::Value, ctx_other: &mut dyn LatticeImmutContext<C, L, LC>) -> Res<L::Value> {
+    fn lattice_join(&self, key: &L::Key, value: &L::Value, ctx_other: &dyn LatticeImmutContext<C, L, LC>) -> Res<L::Value> {
         let value = self.lat_lib.clone().transport(key, value, ctx_other, self)?;
         let db_value = self.get_db().get_value(&LatDBKey::Lattice(key.clone()))?;
         let new_value = match db_value {

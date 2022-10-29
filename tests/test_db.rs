@@ -1,6 +1,6 @@
 use hashlattice::error::{Res, str_error};
 use hashlattice::tagged_mapping::TaggedMapping;
-use hashlattice::lattice::{HashLookup, EmptyHashLookup, ComputationLibrary, EmptyComputationLibrary, ComputationImmutContext, ComputationMutContext, LatticeLibrary, EmptyLatticeLibrary, LatticeImmutContext, LatticeMutContext};
+use hashlattice::lattice::{HashLookup, ComputationLibrary, EmptyComputationLibrary, ComputationImmutContext, ComputationMutContext, LatticeLibrary, EmptyLatticeLibrary, LatticeImmutContext, LatticeMutContext, EmptyContext};
 use hashlattice::db::{DepDB, LatStore, LatDBMapping};
 use hashlattice::sql_db::SqlDepDB;
 
@@ -32,6 +32,9 @@ impl LatticeLibrary<EmptyMapping, MaxTupleMapping, EmptyMapping> for MaxTupleLat
         }
         Ok(result)
     }
+    fn eval_lat_computation(&self, comp: &(), ctx: &dyn LatticeImmutContext<EmptyMapping, MaxTupleMapping, EmptyMapping>) -> Res<()> {
+        str_error("no computations")
+    }
 
 }
 
@@ -40,21 +43,21 @@ impl LatticeLibrary<EmptyMapping, MaxTupleMapping, EmptyMapping> for MaxTupleLat
 async fn test_db() -> Res<()> {
     let mut db = SqlDepDB::<LatDBMapping<EmptyMapping, MaxTupleMapping, EmptyMapping>>::new(":memory:").unwrap();
     db.initialize().unwrap();
-    let mut store = LatStore::new(db, EmptyComputationLibrary, MaxTupleLatLibrary(3), EmptyHashLookup);
+    let mut store = LatStore::new(db, EmptyComputationLibrary, MaxTupleLatLibrary(3));
     let mut key = "first".to_string();
-    assert_eq!(None, store.lattice_lookup(&key)?.0);
-    assert_eq!(vec![1, 2, 0], store.lattice_join(&key, vec![1, 2, 0]).unwrap());
-    assert_eq!(Some(vec![1, 2, 0]), store.lattice_lookup(&key)?.0);
-    assert_eq!(vec![4, 2, 1], store.lattice_join(&key, vec![4, 0, 1]).unwrap());
-    assert_eq!(Some(vec![4, 2, 1]), store.lattice_lookup(&key)?.0);
+    assert!(store.lattice_lookup(&key)?.is_none());
+    assert_eq!(vec![1, 2, 0], store.lattice_join(&key, &vec![1, 2, 0], &EmptyContext).unwrap());
+    assert_eq!(vec![1, 2, 0], store.lattice_lookup(&key)?.unwrap().0);
+    assert_eq!(vec![4, 2, 1], store.lattice_join(&key, &vec![4, 0, 1], &EmptyContext).unwrap());
+    assert_eq!(vec![4, 2, 1], store.lattice_lookup(&key)?.unwrap().0);
     
     key = "second".to_string();
-    assert_eq!(None, store.lattice_lookup(&key)?.0);
-    assert_eq!(vec![1, 0, 1], store.lattice_join(&key, vec![1, 0, 1]).unwrap());
-    assert_eq!(Some(vec![1, 0, 1]), store.lattice_lookup(&key)?.0);
-    assert_eq!(vec![1, 2, 3], store.lattice_join(&key, vec![0, 2, 3]).unwrap());
-    assert_eq!(Some(vec![1, 2, 3]), store.lattice_lookup(&key)?.0);
+    assert!(store.lattice_lookup(&key)?.is_none());
+    assert_eq!(vec![1, 0, 1], store.lattice_join(&key, &vec![1, 0, 1], &EmptyContext).unwrap());
+    assert_eq!(vec![1, 0, 1], store.lattice_lookup(&key)?.unwrap().0);
+    assert_eq!(vec![1, 2, 3], store.lattice_join(&key, &vec![0, 2, 3], &EmptyContext).unwrap());
+    assert_eq!(vec![1, 2, 3], store.lattice_lookup(&key)?.unwrap().0);
 
-    assert_eq!(Some(vec![4, 2, 1]), store.lattice_lookup(&"first".to_string())?.0);
+    assert_eq!(vec![4, 2, 1], store.lattice_lookup(&"first".to_string())?.unwrap().0);
     Ok(())
 }
