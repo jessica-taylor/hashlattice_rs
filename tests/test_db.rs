@@ -32,10 +32,6 @@ impl LatticeLibrary<EmptyMapping, MaxTupleMapping, EmptyMapping> for MaxTupleLat
         }
         Ok(result)
     }
-    fn eval_lat_computation(&self, _comp: &(), _ctx: &dyn LatticeImmutContext<EmptyMapping, MaxTupleMapping, EmptyMapping>) -> Res<()> {
-        str_error("no computations")
-    }
-
 }
 
 
