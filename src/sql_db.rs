@@ -25,7 +25,8 @@ impl<M: TaggedMapping> SqlDepDB<M> {
             key BLOB PRIMARY KEY,
             value BLOB,
             pinned INTEGER,
-            live INTEGER
+            live INTEGER,
+            dirty INTEGER
         )")?;
         self.conn.execute("CREATE TABLE IF NOT EXISTS key_dep (
             key BLOB,
@@ -34,6 +35,7 @@ impl<M: TaggedMapping> SqlDepDB<M> {
         self.conn.execute("CREATE INDEX IF NOT EXISTS key_dep_key ON key_dep (key)")?;
         self.conn.execute("CREATE INDEX IF NOT EXISTS key_dep_dep ON key_dep (dep)")?;
         self.conn.execute("CREATE INDEX IF NOT EXISTS key_value_live ON key_value (live)")?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS key_value_dirty ON key_value (dirty)")?;
         Ok(())
     }
 
@@ -52,6 +54,15 @@ impl<M: TaggedMapping> SqlDepDB<M> {
         Ok(stmt.next()? == State::Row)
     }
 
+    fn set_dependents_dirty_raw(&mut self, key: &[u8]) -> Res<()> {
+        let mut stmt = self.conn.prepare("UPDATE key_value SET dirty = true WHERE key IN (SELECT key FROM key_dep WHERE dep = :key)")?
+            .bind_by_name(":key", key)?;
+        if stmt.next()? != State::Done {
+            return str_error("set_dependents_dirty: unexpected result");
+        }
+        Ok(())
+    }
+
     fn clear_value_deps_raw(&mut self, key: &[u8]) -> Res<()> {
         {
             let mut stmt = self.conn.prepare("DELETE FROM key_value WHERE key = :key")?
@@ -60,6 +71,7 @@ impl<M: TaggedMapping> SqlDepDB<M> {
                 return str_error("Failed to delete value");
             }
         }
+        self.set_dependents_dirty_raw(key)?;
         let mut old_deps: Vec<Vec<u8>> = Vec::new();
         {
             let mut stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key RETURNING dep")?
@@ -96,8 +108,39 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
         }
     }
 
-    fn set_value_deps(&mut self, key: M::Key, value: M::Value, deps: Vec<M::Key>) -> Res<()> {
+    fn set_value_deps(&mut self, key: M::Key, value: M::Value, deps_vec: Vec<M::Key>) -> Res<()> {
         let key = rmp_serde::to_vec(&key)?;
+        let value = rmp_serde::to_vec(&value)?;
+        let mut deps = BTreeSet::<Vec<u8>>::new();
+        for dep in deps_vec {
+            deps.insert(rmp_serde::to_vec(&dep)?);
+        }
+        let same_value = {
+            let mut stmt = self.conn.prepare("SELECT value FROM key_value WHERE key = :key")?
+                .bind_by_name(":key", &*key)?;
+            if stmt.next()? == State::Row {
+                let old_value = stmt.read::<Vec<u8>>(0)?;
+                old_value == value
+            } else {
+                false
+            }
+        };
+        let old_deps = {
+            let mut stmt = self.conn.prepare("SELECT dep FROM key_dep WHERE key = :key")?
+                .bind_by_name(":key", &*key)?;
+            let mut old_deps = BTreeSet::new();
+            while stmt.next()? != State::Done {
+                let dep = stmt.read::<Vec<u8>>(0)?;
+                old_deps.insert(dep);
+            }
+            old_deps
+        };
+        if same_value && old_deps == deps {
+            return Ok(());
+        }
+        if !same_value {
+            self.set_dependents_dirty_raw(&key)?;
+        }
         let already_pinned = self.is_pinned_raw(&key)?;
         {
             let mut stmt = self.conn.prepare("DELETE FROM key_value WHERE key = :key")?
@@ -106,43 +149,38 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 return str_error("Failed to delete value");
             }
         }
-        let mut old_deps = BTreeSet::new();
-        {
-            let mut stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key RETURNING dep")?
-                .bind_by_name(":key", &*key)?;
-            while stmt.next()? == State::Row {
-                let dep = stmt.read::<Vec<u8>>(0)?;
-                old_deps.insert(dep);
-            }
-        }
-        let value = rmp_serde::to_vec(&value)?;
-        {
-            let mut stmt = self.conn.prepare("INSERT INTO key_value (key, value, pinned, live) VALUES (:key, :value, :pinned, false)")?
-                .bind_by_name(":key", &*key)?
-                .bind_by_name(":value", &*value)?
-                .bind_by_name(":pinned", already_pinned as i64)?;
-            if stmt.next()? != State::Done {
-                return str_error("Failed to insert value");
-            }
-        }
-        let mut deps_set = BTreeSet::new();
-        for dep in deps {
-            let dep = rmp_serde::to_vec(&dep)?;
-            {
-                let mut stmt = self.conn.prepare("INSERT INTO key_dep (key, dep) VALUES (:key, :dep)")?
+        for old_dep in &old_deps {
+            if !deps.contains(old_dep) {
+                let mut stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key AND dep = :dep")?
                     .bind_by_name(":key", &*key)?
-                    .bind_by_name(":dep", &*dep)?;
+                    .bind_by_name(":dep", &**old_dep)?;
                 if stmt.next()? != State::Done {
-                    return str_error("Failed to insert dependency");
+                    return str_error("Failed to delete dependency");
                 }
             }
-            if !old_deps.contains(&dep) {
-                self.set_live_raw(&dep)?;
-            }
-            deps_set.insert(dep);
         }
-        for dep in old_deps {
-            if !deps_set.contains(&dep) {
+        {
+            {
+                let mut stmt = self.conn.prepare("INSERT INTO key_value (key, value, pinned, live, dirty) VALUES (:key, :value, :pinned, false, false)")?
+                    .bind_by_name(":key", &*key)?
+                    .bind_by_name(":value", &*value)?
+                    .bind_by_name(":pinned", already_pinned as i64)?;
+                if stmt.next()? != State::Done {
+                    return str_error("Failed to insert value");
+                }
+            }
+            self.set_live_raw(&key)?;
+        }
+        for dep in deps {
+            if !old_deps.contains(&dep) {
+                {
+                    let mut stmt = self.conn.prepare("INSERT INTO key_dep (key, dep) VALUES (:key, :dep)")?
+                        .bind_by_name(":key", &*key)?
+                        .bind_by_name(":dep", &*dep)?;
+                    if stmt.next()? != State::Done {
+                        return str_error("Failed to insert dependency");
+                    }
+                }
                 self.set_live_raw(&dep)?;
             }
         }
@@ -173,7 +211,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
         self.clear_value_deps_raw(&*key)
     }
 
-    fn clear_unpinned(&mut self) -> Res<()> {
+    fn clear_dead(&mut self) -> Res<()> {
         loop {
             let mut to_delete = Vec::new();
             {
@@ -189,5 +227,16 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 self.clear_value_deps_raw(&del_key)?;
             }
         }
+    }
+
+    fn get_dirty(&mut self) -> Res<Vec<M::Key>> {
+        let mut stmt = self.conn.prepare("SELECT key FROM key_value WHERE dirty = true")?;
+        let mut dirty = Vec::new();
+        while stmt.next()? == State::Row {
+            let key = stmt.read::<Vec<u8>>(0)?;
+            let key = rmp_serde::from_slice(&key)?;
+            dirty.push(key);
+        }
+        Ok(dirty)
     }
 }

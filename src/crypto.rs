@@ -77,15 +77,18 @@ impl<T> Hash<T> {
     pub fn to_hex(&self) -> String {
         hex::encode(self.code)
     }
+    pub fn from_hashcode(code: HashCode) -> Self {
+        Self {
+            code,
+            phantom: PhantomData,
+        }
+    }
     pub fn from_hex(hexrep: &str) -> Result<Self, hex::FromHexError> {
         let code_bs: Vec<u8> = hex::decode(hexrep)?;
         let code: HashCode = code_bs
             .try_into()
             .map_err(|_| hex::FromHexError::InvalidStringLength)?;
-        Ok(Self {
-            code,
-            phantom: PhantomData,
-        })
+        Ok(Self::from_hashcode(code))
     }
     pub fn as_bytes(&self) -> &[u8] {
         &self.code
@@ -94,10 +97,7 @@ impl<T> Hash<T> {
         let code: HashCode = bs
             .try_into()
             .map_err(|_| "bad hash bytes length".to_string())?;
-        Ok(Self {
-            code,
-            phantom: PhantomData,
-        })
+        Ok(Self::from_hashcode(code))
     }
 }
 

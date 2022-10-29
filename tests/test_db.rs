@@ -41,10 +41,19 @@ async fn test_db() {
     let mut db = SqlDepDB::<LatDBMapping<EmptyMapping, MaxTupleMapping>>::new(":memory:").unwrap();
     db.initialize().unwrap();
     let mut store = LatStore::new(db, EmptyComputationLibrary, MaxTupleLatLibrary(3), EmptyHashLookup);
-    let key = "test".to_string();
+    let mut key = "first".to_string();
     assert_eq!(None, store.get_lattice(&key));
     assert_eq!(vec![1, 2, 0], store.join_lattice(&key, vec![1, 2, 0]).unwrap());
     assert_eq!(Some(vec![1, 2, 0]), store.get_lattice(&key));
     assert_eq!(vec![4, 2, 1], store.join_lattice(&key, vec![4, 0, 1]).unwrap());
     assert_eq!(Some(vec![4, 2, 1]), store.get_lattice(&key));
+    
+    key = "second".to_string();
+    assert_eq!(None, store.get_lattice(&key));
+    assert_eq!(vec![1, 0, 1], store.join_lattice(&key, vec![1, 0, 1]).unwrap());
+    assert_eq!(Some(vec![1, 0, 1]), store.get_lattice(&key));
+    assert_eq!(vec![1, 2, 3], store.join_lattice(&key, vec![0, 2, 3]).unwrap());
+    assert_eq!(Some(vec![1, 2, 3]), store.get_lattice(&key));
+
+    assert_eq!(Some(vec![4, 2, 1]), store.get_lattice(&"first".to_string()));
 }
