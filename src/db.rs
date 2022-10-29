@@ -337,7 +337,7 @@ impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> LatticeMutContext<C,
             deps: deps.to_merkle_deps()
         })?;
         self.get_db().set_value_deps(LatDBKey::Lattice(key.clone()), LatDBValue::Lattice(merkle_hash), deps.to_keys())?;
-        self.update_dirty();
+        self.update_dirty()?;
         Ok(new_value)
     }
 }
