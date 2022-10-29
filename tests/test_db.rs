@@ -40,24 +40,23 @@ impl LatticeLibrary<EmptyMapping, MaxTupleMapping, EmptyMapping> for MaxTupleLat
 
 
 #[tokio::test]
-async fn test_db() -> Res<()> {
+async fn test_db() {
     let mut db = SqlDepDB::<LatDBMapping<EmptyMapping, MaxTupleMapping, EmptyMapping>>::new(":memory:").unwrap();
     db.initialize().unwrap();
     let store = LatStore::new(db, EmptyComputationLibrary, MaxTupleLatLibrary(3));
     let mut key = "first".to_string();
-    assert!(store.lattice_lookup(&key)?.is_none());
+    assert!(store.lattice_lookup(&key).unwrap().is_none());
     assert_eq!(vec![1, 2, 0], store.lattice_join(&key, &vec![1, 2, 0], &EmptyContext).unwrap());
-    assert_eq!(vec![1, 2, 0], store.lattice_lookup(&key)?.unwrap().0);
+    assert_eq!(vec![1, 2, 0], store.lattice_lookup(&key).unwrap().unwrap().0);
     assert_eq!(vec![4, 2, 1], store.lattice_join(&key, &vec![4, 0, 1], &EmptyContext).unwrap());
-    assert_eq!(vec![4, 2, 1], store.lattice_lookup(&key)?.unwrap().0);
+    assert_eq!(vec![4, 2, 1], store.lattice_lookup(&key).unwrap().unwrap().0);
     
     key = "second".to_string();
-    assert!(store.lattice_lookup(&key)?.is_none());
+    assert!(store.lattice_lookup(&key).unwrap().is_none());
     assert_eq!(vec![1, 0, 1], store.lattice_join(&key, &vec![1, 0, 1], &EmptyContext).unwrap());
-    assert_eq!(vec![1, 0, 1], store.lattice_lookup(&key)?.unwrap().0);
+    assert_eq!(vec![1, 0, 1], store.lattice_lookup(&key).unwrap().unwrap().0);
     assert_eq!(vec![1, 2, 3], store.lattice_join(&key, &vec![0, 2, 3], &EmptyContext).unwrap());
-    assert_eq!(vec![1, 2, 3], store.lattice_lookup(&key)?.unwrap().0);
+    assert_eq!(vec![1, 2, 3], store.lattice_lookup(&key).unwrap().unwrap().0);
 
-    assert_eq!(vec![4, 2, 1], store.lattice_lookup(&"first".to_string())?.unwrap().0);
-    Ok(())
+    assert_eq!(vec![4, 2, 1], store.lattice_lookup(&"first".to_string()).unwrap().unwrap().0);
 }

@@ -274,7 +274,8 @@ impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> ComputationMutContex
 impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> LatticeImmutContext<C, L, LC> for LatStore<C, L, LC> {
 
     fn lattice_lookup<'a>(&'a self, key: &L::Key) -> Res<Option<(L::Value, Box<dyn 'a + LatticeImmutContext<C, L, LC>>)>> {
-        match self.get_db().get_value(&LatDBKey::Lattice(key.clone()))? {
+        let db_value = self.get_db().get_value(&LatDBKey::Lattice(key.clone()))?;
+        match db_value {
             Some(LatDBValue::Lattice(merkle_hash)) => {
                 let merkle = self.hash_lookup_generic(merkle_hash)?;
                 if let Some(deps) = self.deps_stack.lock().unwrap().last_mut() {
@@ -290,7 +291,8 @@ impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> LatticeImmutContext<
     }
 
     fn eval_lat_computation<'a>(&'a self, key: &LC::Key) -> Res<(LC::Value, Box<dyn 'a + LatticeImmutContext<C, L, LC>>)> {
-        let merkle = match self.get_db().get_value(&LatDBKey::LatComputation(key.clone()))? {
+        let db_value = self.get_db().get_value(&LatDBKey::LatComputation(key.clone()))?;
+        let merkle = match db_value {
             Some(LatDBValue::LatComputation(merkle_hash)) => self.hash_lookup_generic(merkle_hash)?,
             _ => {
                 let (value, deps) = self.with_get_deps(|this| this.lat_lib.clone().eval_lat_computation(key, self))?;
