@@ -42,6 +42,9 @@ impl<LK: Ord, LV, LCK: Ord, LCV> LatMerkleNodeDeps<LK, LV, LCK, LCV> {
             lat_comp_deps: BTreeMap::new(),
         }
     }
+    pub fn is_empty(&self) -> bool {
+        self.lat_deps.is_empty() && self.lat_comp_deps.is_empty()
+    }
 }
 
 type LatMerkleNodeDepsM<L: TaggedMapping, LC: TaggedMapping> = LatMerkleNodeDeps<L::Key, L::Value, LC::Key, LC::Value>;
@@ -205,12 +208,18 @@ impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> LatStore<C, L, LC> {
                             deps: merkle.deps
                         };
                         let tr_value = self.lat_lib.clone().transport(&lat_key, &merkle.value, &old_ctx, self)?;
+                        let bot = self.lat_lib.clone().bottom(&lat_key)?;
                         let ((), tr_deps) = self.with_get_deps(|this| this.lat_lib.clone().check_elem(&lat_key, &tr_value, this))?;
-                        let merkle_hash = self.hash_put_generic(&LatMerkleNode {
-                            value: tr_value,
-                            deps: tr_deps.to_merkle_deps(),
-                        })?;
-                        self.get_db().set_value_deps(key.clone(), LatDBValue::Lattice(merkle_hash), tr_deps.to_keys())?;
+                        let merkle_deps = tr_deps.to_merkle_deps();
+                        if tr_value == bot && merkle_deps.is_empty() {
+                            self.get_db().clear_value_deps(&key)?;
+                        } else {
+                            let merkle_hash = self.hash_put_generic(&LatMerkleNode {
+                                value: tr_value,
+                                deps: tr_deps.to_merkle_deps(),
+                            })?;
+                            self.get_db().set_value_deps(key.clone(), LatDBValue::Lattice(merkle_hash), tr_deps.to_keys())?;
+                        }
                     }
                     LatDBKey::LatComputation(lat_comp_key) => {
                         let (value, deps) = self.with_get_deps(|this| this.lat_lib.clone().eval_lat_computation(lat_comp_key, this))?;
@@ -223,6 +232,7 @@ impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> LatStore<C, L, LC> {
                     _ => {}
                 }
             }
+            self.update_dirty()?;
         }
     }
 }
@@ -273,7 +283,7 @@ impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> ComputationMutContex
 
 impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> LatticeImmutContext<C, L, LC> for LatStore<C, L, LC> {
 
-    fn lattice_lookup<'a>(&'a self, key: &L::Key) -> Res<Option<(L::Value, Box<dyn 'a + LatticeImmutContext<C, L, LC>>)>> {
+    fn lattice_lookup<'a>(&'a self, key: &L::Key) -> Res<(L::Value, Box<dyn 'a + LatticeImmutContext<C, L, LC>>)> {
         let db_value = self.get_db().get_value(&LatDBKey::Lattice(key.clone()))?;
         match db_value {
             Some(LatDBValue::Lattice(merkle_hash)) => {
@@ -281,12 +291,19 @@ impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> LatticeImmutContext<
                 if let Some(deps) = self.deps_stack.lock().unwrap().last_mut() {
                     deps.lat_deps.insert(key.clone(), hash(&merkle));
                 }
-                Ok(Some((merkle.value, Box::new(LatStoreImmutCtx {
+                Ok((merkle.value, Box::new(LatStoreImmutCtx {
                     store: self,
                     deps: merkle.deps
-                }))))
+                })))
             }
-            _ => { return Ok(None); }
+            None => {
+                let bot = self.lat_lib.clone().bottom(key)?;
+                Ok((bot, Box::new(LatStoreImmutCtx {
+                    store: self,
+                    deps: LatMerkleNodeDeps::new()
+                })))
+            }
+            _ => str_error("Lattice key has no lattice value"),
         }
     }
 
@@ -333,13 +350,19 @@ impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> LatticeMutContext<C,
             }
             _ => return Err("lattice value is not a lattice".into())
         };
+        let bot = self.lat_lib.clone().bottom(key)?;
         let ((), deps) = self.with_get_deps(|this| this.lat_lib.clone().check_elem(key, &new_value, this))?;
-        let merkle_hash = self.hash_put_generic(&LatMerkleNode {
-            value: new_value.clone(),
-            deps: deps.to_merkle_deps()
-        })?;
-        self.get_db().set_value_deps(LatDBKey::Lattice(key.clone()), LatDBValue::Lattice(merkle_hash), deps.to_keys())?;
-        self.update_dirty()?;
+        let merkle_deps = deps.to_merkle_deps();
+        if new_value == bot && merkle_deps.is_empty() {
+            self.get_db().clear_value_deps(&LatDBKey::Lattice(key.clone()))?;
+        } else {
+            let merkle_hash = self.hash_put_generic(&LatMerkleNode {
+                value: new_value.clone(),
+                deps: deps.to_merkle_deps()
+            })?;
+            self.get_db().set_value_deps(LatDBKey::Lattice(key.clone()), LatDBValue::Lattice(merkle_hash), deps.to_keys())?;
+            self.update_dirty()?;
+        }
         Ok(new_value)
     }
 }
@@ -363,15 +386,21 @@ impl<'a, C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> ComputationImmut
 }
 
 impl<'a, C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> LatticeImmutContext<C, L, LC> for LatStoreImmutCtx<'a, C, L, LC> {
-    fn lattice_lookup<'b>(&'b self, key: &L::Key) -> Res<Option<(L::Value, Box<dyn 'b + LatticeImmutContext<C, L, LC>>)>> {
+    fn lattice_lookup<'b>(&'b self, key: &L::Key) -> Res<(L::Value, Box<dyn 'b + LatticeImmutContext<C, L, LC>>)> {
         match self.deps.lat_deps.get(key) {
-            None => Ok(None),
+            None => {
+                let bot = self.store.lat_lib.clone().bottom(key)?;
+                Ok((bot, Box::new(LatStoreImmutCtx {
+                    store: self.store,
+                    deps: LatMerkleNodeDeps::new()
+                })))
+            }
             Some(merkle_hash) => {
                 let merkle = self.store.hash_lookup_generic(merkle_hash.clone())?;
-                Ok(Some((merkle.value, Box::new(LatStoreImmutCtx {
+                Ok((merkle.value, Box::new(LatStoreImmutCtx {
                     store: self.store,
                     deps: merkle.deps,
-                }))))
+                })))
             }
         }
     }

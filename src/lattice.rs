@@ -45,6 +45,10 @@ pub trait LatticeLibrary<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> 
         str_error("join not implemented")
     }
 
+    fn bottom(&self, key: &L::Key) -> Res<L::Value> {
+        str_error("bottom not implemented")
+    }
+
     fn transport(&self, key: &L::Key, value: &L::Value, old_ctx: &dyn LatticeImmutContext<C, L, LC>, new_ctx: &dyn LatticeMutContext<C, L, LC>) -> Res<L::Value> {
         Ok(value.clone())
     }
@@ -56,7 +60,7 @@ pub trait LatticeLibrary<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> 
 
 pub trait LatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> : ComputationImmutContext<C> {
 
-    fn lattice_lookup<'a>(&'a self, key: &L::Key) -> Res<Option<(L::Value, Box<dyn 'a + LatticeImmutContext<C, L, LC>>)>>;
+    fn lattice_lookup<'a>(&'a self, key: &L::Key) -> Res<(L::Value, Box<dyn 'a + LatticeImmutContext<C, L, LC>>)>;
 
     fn eval_lat_computation<'a>(&'a self, key: &LC::Key) -> Res<(LC::Value, Box<dyn 'a + LatticeImmutContext<C, L, LC>>)>;
 
@@ -98,7 +102,7 @@ impl<C: TaggedMapping> ComputationMutContext<C> for EmptyContext {
 
 impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> LatticeImmutContext<C, L, LC> for EmptyContext {
 
-    fn lattice_lookup<'a>(&'a self, key: &L::Key) -> Res<Option<(L::Value, Box<dyn 'a + LatticeImmutContext<C, L, LC>>)>> {
+    fn lattice_lookup<'a>(&'a self, key: &L::Key) -> Res<(L::Value, Box<dyn 'a + LatticeImmutContext<C, L, LC>>)> {
         str_error(&format!("EmptyLatticeImmutContext: no lattice lookup for {:?}", key))
     }
 
