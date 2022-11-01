@@ -1,8 +1,10 @@
 use std::collections::BTreeSet;
 use std::marker::PhantomData;
+
+use anyhow::bail;
 use sqlite::{Connection, State};
 
-use crate::error::{Res, str_error};
+use crate::error::Res;
 use crate::tagged_mapping::TaggedMapping;
 use crate::db::DepDB;
 
@@ -43,7 +45,7 @@ impl<M: TaggedMapping> SqlDepDB<M> {
         let mut stmt = self.conn.prepare("UPDATE key_value SET live = (pinned OR EXISTS (SELECT 1 FROM key_dep WHERE dep = key_value.key)) WHERE key = :key")?
             .bind_by_name(":key", key)?;
         if stmt.next()? != State::Done {
-            return str_error("set_live_raw: unexpected result");
+            bail!("set_live_raw: unexpected result");
         }
         Ok(())
     }
@@ -58,7 +60,7 @@ impl<M: TaggedMapping> SqlDepDB<M> {
         let mut stmt = self.conn.prepare("UPDATE key_value SET dirty = true WHERE key IN (SELECT key FROM key_dep WHERE dep = :key)")?
             .bind_by_name(":key", key)?;
         if stmt.next()? != State::Done {
-            return str_error("set_dependents_dirty: unexpected result");
+            bail!("set_dependents_dirty: unexpected result");
         }
         Ok(())
     }
@@ -68,7 +70,7 @@ impl<M: TaggedMapping> SqlDepDB<M> {
             let mut stmt = self.conn.prepare("DELETE FROM key_value WHERE key = :key")?
                 .bind_by_name(":key", key)?;
             if stmt.next()? != State::Done {
-                return str_error("Failed to delete value");
+                bail!("Failed to delete value");
             }
         }
         self.set_dependents_dirty_raw(key)?;
@@ -146,7 +148,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
             let mut stmt = self.conn.prepare("DELETE FROM key_value WHERE key = :key")?
                 .bind_by_name(":key", &*key)?;
             if stmt.next()? != State::Done {
-                return str_error("Failed to delete value");
+                bail!("Failed to delete value");
             }
         }
         for old_dep in &old_deps {
@@ -155,7 +157,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                     .bind_by_name(":key", &*key)?
                     .bind_by_name(":dep", &**old_dep)?;
                 if stmt.next()? != State::Done {
-                    return str_error("Failed to delete dependency");
+                    bail!("Failed to delete dependency");
                 }
             }
         }
@@ -166,7 +168,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                     .bind_by_name(":value", &*value)?
                     .bind_by_name(":pinned", already_pinned as i64)?;
                 if stmt.next()? != State::Done {
-                    return str_error("Failed to insert value");
+                    bail!("Failed to insert value");
                 }
             }
             self.set_live_raw(&key)?;
@@ -178,7 +180,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                         .bind_by_name(":key", &*key)?
                         .bind_by_name(":dep", &*dep)?;
                     if stmt.next()? != State::Done {
-                        return str_error("Failed to insert dependency");
+                        bail!("Failed to insert dependency");
                     }
                 }
                 self.set_live_raw(&dep)?;
@@ -199,7 +201,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 .bind_by_name(":key", &*key)?
                 .bind_by_name(":pinned", pin as i64)?;
             if stmt.next()? != State::Done {
-                return str_error("Failed to update pin");
+                bail!("Failed to update pin");
             }
         }
         self.set_live_raw(&key)?;

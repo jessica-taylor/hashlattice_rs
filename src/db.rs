@@ -3,7 +3,9 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use core::fmt::{Debug};
 
-use crate::error::{Res, str_error};
+use anyhow::bail;
+
+use crate::error::Res;
 use crate::crypto::{HashCode, hash_of_bytes, Hash, hash};
 use crate::tagged_mapping::TaggedMapping;
 use crate::lattice::{HashLookup, LatticeLibrary, ComputationLibrary, ComputationImmutContext, ComputationMutContext, LatticeImmutContext, LatticeMutContext};
@@ -200,7 +202,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                     LatDBKey::Lattice(lat_key) => {
                         let merkle_hash = match self.get_db().get_value(&key)? {
                             Some(LatDBValue::Lattice(merkle_hash)) => merkle_hash,
-                            _ => return Err(format!("Lattice key {:?} has no merkle hash", lat_key).into()),
+                            _ => bail!("Lattice key {:?} has no merkle hash", lat_key),
                         };
                         let merkle = self.hash_lookup_generic(merkle_hash)?;
                         let old_ctx = Arc::new(LatStoreImmutCtx {
@@ -246,7 +248,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         let res = self.get_db().get_value(&LatDBKey::Hash(hash))?;
         match res {
             Some(LatDBValue::Hash(bytes)) => Ok(bytes),
-            _ => Err(format!("Hash {:?} not found", hash).into()),
+            _ => bail!("Hash {:?} not found", hash),
         }
     }
 }
@@ -303,7 +305,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                     deps: LatMerkleNodeDeps::new()
                 })))
             }
-            _ => str_error("Lattice key has no lattice value"),
+            _ => bail!("Lattice key has no lattice value"),
         }
     }
 
@@ -348,7 +350,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                 }
                 joined
             }
-            _ => return Err("lattice value is not a lattice".into())
+            _ => bail!("lattice value is not a lattice")
         };
         let bot = self.lat_lib.clone().bottom(key)?;
         let ((), deps) = self.with_get_deps(|this| this.lat_lib.clone().check_elem(key, &new_value, this))?;
@@ -407,7 +409,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 
     fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<(LC::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)> {
         match self.deps.lat_comp_deps.get(key) {
-            None => str_error("lattice computation dependency not found"),
+            None => bail!("lattice computation dependency not found"),
             Some(merkle_hash) => {
                 let merkle = self.store.hash_lookup_generic(merkle_hash.clone())?;
                 Ok((merkle.value, Arc::new(LatStoreImmutCtx {

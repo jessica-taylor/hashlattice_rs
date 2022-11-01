@@ -7,3 +7,4 @@ pub mod sql_db;
 pub mod signalmessage;
 pub mod signalserver;
 pub mod signalclient;
+pub mod js;

@@ -1,8 +1,4 @@
-use std::error::Error;
+use anyhow::Error;
 
 
-pub type Res<T> = Result<T, Box<dyn Error>>;
-
-pub fn str_error<T>(s: &str) -> Res<T> {
-    Err(Box::<dyn Error>::from(s))
-}
+pub type Res<T> = Result<T, Error>;

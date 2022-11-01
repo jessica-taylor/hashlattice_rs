@@ -6,7 +6,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tungstenite::protocol::Message;
 
 
-use crate::error::{Res, str_error};
+use crate::error::Res;
 use crate::signalmessage::{SignalMessageToServer};
 
 // https://github.com/snapview/tokio-tungstenite/blob/master/examples/autobahn-server.rs
@@ -16,7 +16,7 @@ async fn runserver() -> Res<()> {
     let addr = "127.0.0.1:2020";
 
     // Create the event loop and TCP listener we'll accept connections on.
-    let listener = TcpListener::bind(&addr).await.map_err(|e| e.to_string())?;
+    let listener = TcpListener::bind(&addr).await?;
     println!("Listening on: {}", addr);
 
     while let Ok((stream, _)) = listener.accept().await {
