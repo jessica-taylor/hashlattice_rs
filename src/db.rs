@@ -166,7 +166,6 @@ pub struct LatStore<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> {
     db: Arc<Mutex<dyn DepDB<LatDBMapping<C, L, LC>>>>,
     comp_lib: Arc<dyn ComputationLibrary<C>>,
     lat_lib: Arc<dyn LatticeLibrary<C, L, LC>>,
-    deps_stack: Arc<Mutex<Vec<LatDeps<C::Key, L::Key, L::Value, LC::Key, LC::Value>>>>,
 }
 
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> Clone for LatStore<C, L, LC> {
@@ -175,7 +174,6 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             db: self.db.clone(),
             comp_lib: self.comp_lib.clone(),
             lat_lib: self.lat_lib.clone(),
-            deps_stack: self.deps_stack.clone(),
         }
     }
 }
@@ -188,7 +186,6 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             db: Arc::new(Mutex::new(db)),
             comp_lib: Arc::new(comp_lib),
             lat_lib: Arc::new(lat_lib),
-            deps_stack: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -451,9 +448,6 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 #[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> ComputationImmutContext<C> for LatStoreJoinedCtx<C, L, LC> {
     async fn eval_computation(&self, key: &C::Key) -> Res<C::Value> {
-        if let Some(deps) = self.store.deps_stack.lock().unwrap().last_mut() {
-            deps.comp_deps.insert(key.clone());
-        }
         let computation_key = LatDBKey::Computation(key.clone());
         if let Some(LatDBValue::Computation(value)) = self.store.get_db().get_value(&computation_key)? {
             return Ok(value);
