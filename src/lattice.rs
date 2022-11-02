@@ -20,6 +20,11 @@ pub trait HashLookup : Send + Sync {
     }
 }
 
+pub async fn hash_lookup_generic<H: HashLookup + ?Sized, T: DeserializeOwned>(hl: &H, hsh: Hash<T>) -> Res<T> {
+    let bs = hl.hash_lookup(hsh.code).await?;
+    Ok(rmp_serde::from_slice(&bs)?)
+}
+
 #[async_trait]
 pub trait ComputationImmutContext<C: TaggedMapping> : HashLookup + Send + Sync {
 
@@ -35,6 +40,11 @@ pub trait ComputationMutContext<C: TaggedMapping> : ComputationImmutContext<C> +
         bail!("hash_put not implemented")
     }
 
+}
+
+pub async fn hash_put_generic<C: TaggedMapping, H: ComputationMutContext<C> + ?Sized, T: Serialize>(hp: &H, value: &T) -> Res<Hash<T>> {
+    let bs = rmp_serde::to_vec(value)?;
+    Ok(Hash::from_hashcode(hp.hash_put(bs).await?))
 }
 
 #[async_trait]

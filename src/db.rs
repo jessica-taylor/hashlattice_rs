@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use crate::error::Res;
 use crate::crypto::{HashCode, hash_of_bytes, Hash, hash};
 use crate::tagged_mapping::TaggedMapping;
-use crate::lattice::{HashLookup, LatticeLibrary, ComputationLibrary, ComputationImmutContext, ComputationMutContext, LatticeImmutContext, LatticeMutContext, LatMerkleDeps, LatMerkleNode, EmptyContext};
+use crate::lattice::{HashLookup, hash_lookup_generic, hash_put_generic, LatticeLibrary, ComputationLibrary, ComputationImmutContext, ComputationMutContext, LatticeImmutContext, LatticeMutContext, LatMerkleDeps, LatMerkleNode, EmptyContext};
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
 /// a key-value store with key-key dependencies; auto-removes unpinned, non-depended-on keys
@@ -206,16 +206,6 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         self.get_db().clear_dead()
     }
 
-    async fn hash_lookup_generic<T: DeserializeOwned>(&self, hsh: Hash<T>) -> Res<T> {
-        let bs = self.hash_lookup(hsh.code).await?;
-        Ok(rmp_serde::from_slice(&bs)?)
-    }
-
-    async fn hash_put_generic<T: Serialize>(&self, value: &T) -> Res<Hash<T>> {
-        let bs = rmp_serde::to_vec(&value)?;
-        Ok(Hash::from_hashcode(self.hash_put(bs).await?))
-    }
-
     async fn update_dirty(&self) -> Res<()> {
         loop {
             let dirty = self.get_db().get_dirty()?;
@@ -229,7 +219,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                             Some(LatDBValue::Lattice(merkle_hash)) => merkle_hash,
                             _ => bail!("Lattice key {:?} has no merkle hash", lat_key),
                         };
-                        let merkle = self.hash_lookup_generic(merkle_hash).await?;
+                        let merkle = hash_lookup_generic(self, merkle_hash).await?;
                         let new_ctx = Arc::new(self.clone());
                         let old_ctx = Arc::new(LatStoreJoinedCtx::from_store(new_ctx.clone(), merkle.deps));
                         let opt_tr_value = self.lat_lib.transport(&lat_key, &merkle.value, old_ctx, new_ctx).await?;
@@ -244,7 +234,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                                     lat_lib.check_elem(&lat_key, &tr_value2, this).await
                                 }).await?;
                                 let merkle_deps = tr_deps.to_merkle_deps();
-                                let merkle_hash = self.hash_put_generic(&LatMerkleNode {
+                                let merkle_hash = hash_put_generic(self, &LatMerkleNode {
                                     value: tr_value,
                                     deps: tr_deps.to_merkle_deps(),
                                 }).await?;
@@ -257,7 +247,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                         let (value, deps) = LatDepsTracker::with_get_deps(self, move |this| async move {
                             lat_lib.eval_lat_computation(lat_comp_key, this).await
                         }).await?;
-                        let merkle_hash = self.hash_put_generic(&LatMerkleNode {
+                        let merkle_hash = hash_put_generic(self, &LatMerkleNode {
                             value,
                             deps: deps.to_merkle_deps(),
                         }).await?;
@@ -341,7 +331,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                     value: value,
                     deps: deps.to_merkle_deps()
                 };
-                let merkle_hash = self.hash_put_generic(&merkle).await?;
+                let merkle_hash = hash_put_generic(self, &merkle).await?;
                 self.get_db().set_value_deps(LatDBKey::LatComputation(key.clone()), LatDBValue::LatComputation(merkle_hash), deps.to_keys())?;
                 Ok(merkle_hash)
             },
@@ -395,7 +385,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             store_is_backup: true,
         }
     }
-    fn no_store_deps(&self) -> Self {
+    fn only_other_deps(&self) -> Self {
         Self {
             store: self.store.clone(),
             store_deps: Arc::new(LatMerkleDeps::new()),
@@ -404,7 +394,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             store_is_backup: false,
         }
     }
-    fn no_other_deps(&self) -> Self {
+    fn only_store_deps(&self) -> Self {
         Self {
             store: self.store.clone(),
             store_deps: self.store_deps.clone(),
@@ -490,7 +480,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         let lat_lib = self.store.lat_lib.clone();
         let (joined, deps) = match store_dep {
             None => {
-                let other_merkle: LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value> = rmp_serde::from_slice(&self.other_hashlookup.hash_lookup(other_dep.code).await?)?;
+                let other_merkle = hash_lookup_generic(&*self.other_hashlookup, other_dep).await?;
                 let value2 = other_merkle.value.clone();
                 let ((), deps) = LatDepsTracker::<C, L, LC, _>::with_get_deps(self, move |this| async move {
                     lat_lib.check_elem(&key, &value2, this).await
@@ -498,8 +488,8 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                 (other_merkle.value, deps)
             },
             Some(store_dep) => {
-                let store_merkle: LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value> = rmp_serde::from_slice(&self.store.hash_lookup(store_dep.code).await?)?;
-                let other_merkle: LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value> = rmp_serde::from_slice(&self.other_hashlookup.hash_lookup(other_dep.code).await?)?;
+                let store_merkle = hash_lookup_generic(&*self.store, store_dep).await?;
+                let other_merkle = hash_lookup_generic(&*self.other_hashlookup, other_dep).await?;
                 // TODO check_elem other??
                 let inner_join_ctx = Arc::new(LatStoreJoinedCtx {
                     store: self.store.clone(),
@@ -508,8 +498,8 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                     other_deps: Arc::new(other_merkle.deps.clone()),
                     store_is_backup: true
                 });
-                let store_tr = self.store.lat_lib.transport(key, &store_merkle.value, Arc::new(inner_join_ctx.no_other_deps()), inner_join_ctx.clone()).await?;
-                let other_tr = self.store.lat_lib.transport(key, &other_merkle.value, Arc::new(inner_join_ctx.no_store_deps()), inner_join_ctx.clone()).await?;
+                let store_tr = self.store.lat_lib.transport(key, &store_merkle.value, Arc::new(inner_join_ctx.only_store_deps()), inner_join_ctx.clone()).await?;
+                let other_tr = self.store.lat_lib.transport(key, &other_merkle.value, Arc::new(inner_join_ctx.only_other_deps()), inner_join_ctx.clone()).await?;
                 let joined = match store_tr {
                     None => other_tr,
                     Some(store_tr) => match other_tr {
@@ -535,7 +525,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             value: joined,
             deps: deps.to_merkle_deps()
         };
-        let merkle_hash = self.store.hash_put_generic(&merkle).await?;
+        let merkle_hash = hash_put_generic(&*self.store, &merkle).await?;
         if store_dep != Some(merkle_hash) {
             self.store.get_db().set_value_deps(LatDBKey::Lattice(key.clone()), LatDBValue::Lattice(merkle_hash), deps.to_keys())?;
             self.store.update_dirty().await?;
@@ -551,11 +541,11 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         }
         let store_deps = match store_dep {
             None => LatMerkleDeps::new(),
-            Some(store_dep) => rmp_serde::from_slice(&self.store.hash_lookup(store_dep.code).await?)?
+            Some(store_dep) => hash_lookup_generic(&*self.store, *store_dep).await?.deps
         };
         let other_deps = match other_dep {
             None => LatMerkleDeps::new(),
-            Some(other_dep) => rmp_serde::from_slice(&self.other_hashlookup.hash_lookup(other_dep.code).await?)?
+            Some(other_dep) => hash_lookup_generic(&*self.other_hashlookup, *other_dep).await?.deps
         };
         let inner_join_ctx = Arc::new(LatStoreJoinedCtx {
             store: self.store.clone(),
@@ -569,7 +559,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             lat_lib.eval_lat_computation(&key, inner_join_ctx).await
         }).await?;
         let merkle = LatMerkleNode {value, deps: deps.to_merkle_deps()};
-        let merkle_hash = self.store.hash_put_generic(&merkle).await?;
+        let merkle_hash = hash_put_generic(&*self.store, &merkle).await?;
         if store_dep.is_none() || *store_dep.unwrap() != merkle_hash {
             self.store.get_db().set_value_deps(LatDBKey::LatComputation(key.clone()), LatDBValue::LatComputation(merkle_hash), deps.to_keys())?;
             self.store.update_dirty().await?;
