@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::rc::Rc;
 use core::cmp::Ordering;
 
 use anyhow::bail;
@@ -35,57 +36,77 @@ impl TaggedMapping for JsMapping {
     type Value = JsValue;
 }
 
-enum ContextResource {
+enum DynContext {
     ComputationImmut(Arc<dyn ComputationImmutContext<JsMapping>>),
     LatticeImmut(Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>>),
     LatticeMut(Arc<dyn LatticeMutContext<JsMapping, JsMapping, JsMapping>>),
 }
 
+struct ContextResource {
+    context: DynContext,
+    deps: Mutex<Vec<u32>>,
+}
+
 impl Resource for ContextResource {}
 
+
 impl ContextResource {
+    fn new(context: DynContext) -> Self {
+        Self {
+            context,
+            deps: Mutex::new(vec![]),
+        }
+    }
+    fn clear_deps(&self, state: &mut OpState) -> Res<()> {
+        let mut deps = self.deps.lock().unwrap();
+        for dep_id in deps.drain(..) {
+            let dep: Rc<ContextResource> = state.resource_table.take(dep_id)?;
+            dep.clear_deps(state)?;
+        }
+        Ok(())
+    }
     fn hash_lookup(&self, hash: HashCode) -> Res<Vec<u8>> {
-        match self {
-            ContextResource::ComputationImmut(ctx) => ctx.clone().hash_lookup(hash),
-            ContextResource::LatticeImmut(ctx) => ctx.clone().hash_lookup(hash),
-            ContextResource::LatticeMut(ctx) => ctx.clone().hash_lookup(hash),
+        match &self.context {
+            DynContext::ComputationImmut(ctx) => ctx.clone().hash_lookup(hash),
+            DynContext::LatticeImmut(ctx) => ctx.clone().hash_lookup(hash),
+            DynContext::LatticeMut(ctx) => ctx.clone().hash_lookup(hash),
         }
     }
     fn eval_computation(&self, key: &JsValue) -> Res<JsValue> {
-        match self {
-            ContextResource::ComputationImmut(ctx) => ctx.clone().eval_computation(key),
-            ContextResource::LatticeImmut(ctx) => ctx.clone().eval_computation(key),
-            ContextResource::LatticeMut(ctx) => ctx.clone().eval_computation(key),
+        match &self.context {
+            DynContext::ComputationImmut(ctx) => ctx.clone().eval_computation(key),
+            DynContext::LatticeImmut(ctx) => ctx.clone().eval_computation(key),
+            DynContext::LatticeMut(ctx) => ctx.clone().eval_computation(key),
         }
     }
     fn hash_put(&self, value: Vec<u8>) -> Res<HashCode> {
-        match self {
-            ContextResource::ComputationImmut(ctx) => bail!("Cannot hash_put in ComputationImmutContext"),
-            ContextResource::LatticeImmut(ctx) => bail!("Cannot hash_put in LatticeImmutContext"),
-            ContextResource::LatticeMut(ctx) => ctx.clone().hash_put(value),
+        match &self.context {
+            DynContext::ComputationImmut(ctx) => bail!("Cannot hash_put in ComputationImmutContext"),
+            DynContext::LatticeImmut(ctx) => bail!("Cannot hash_put in LatticeImmutContext"),
+            DynContext::LatticeMut(ctx) => ctx.clone().hash_put(value),
         }
     }
     fn lattice_lookup(&self, key: &JsValue) -> Res<(JsValue, Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>>)> {
-        match self {
-            ContextResource::ComputationImmut(ctx) => bail!("Cannot lattice_lookup in ComputationImmutContext"),
-            ContextResource::LatticeImmut(ctx) => ctx.clone().lattice_lookup(key),
-            ContextResource::LatticeMut(ctx) => ctx.clone().lattice_lookup(key),
+        match &self.context {
+            DynContext::ComputationImmut(ctx) => bail!("Cannot lattice_lookup in ComputationImmutContext"),
+            DynContext::LatticeImmut(ctx) => ctx.clone().lattice_lookup(key),
+            DynContext::LatticeMut(ctx) => ctx.clone().lattice_lookup(key),
         }
     }
 
     fn eval_lat_computation(&self, key: &JsValue) -> Res<(JsValue, Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>>)> {
-        match self {
-            ContextResource::ComputationImmut(ctx) => bail!("Cannot eval_lat_computation in ComputationImmutContext"),
-            ContextResource::LatticeImmut(ctx) => ctx.clone().eval_lat_computation(key),
-            ContextResource::LatticeMut(ctx) => ctx.clone().eval_lat_computation(key),
+        match &self.context {
+            DynContext::ComputationImmut(ctx) => bail!("Cannot eval_lat_computation in ComputationImmutContext"),
+            DynContext::LatticeImmut(ctx) => ctx.clone().eval_lat_computation(key),
+            DynContext::LatticeMut(ctx) => ctx.clone().eval_lat_computation(key),
         }
     }
 
     fn lattice_join(&self, key: &JsValue, value: &JsValue, ctx_other: Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>>) -> Res<JsValue> {
-        match self {
-            ContextResource::ComputationImmut(ctx) => bail!("Cannot lattice_join in ComputationImmutContext"),
-            ContextResource::LatticeImmut(ctx) => bail!("Cannot lattice_join in LatticeImmutContext"),
-            ContextResource::LatticeMut(ctx) => ctx.clone().lattice_join(key, value, ctx_other),
+        match &self.context {
+            DynContext::ComputationImmut(ctx) => bail!("Cannot lattice_join in ComputationImmutContext"),
+            DynContext::LatticeImmut(ctx) => bail!("Cannot lattice_join in LatticeImmutContext"),
+            DynContext::LatticeMut(ctx) => ctx.clone().lattice_join(key, value, ctx_other),
         }
     }
 }
@@ -113,7 +134,8 @@ async fn op_hash_put(state: &mut OpState, ctxid: u32, value: Vec<u8>) -> Result<
 async fn op_lattice_lookup(state: &mut OpState, ctxid: u32, key: SerdeJsValue) -> Result<(SerdeJsValue, u32), AnyError> {
     let ctx = state.resource_table.get::<ContextResource>(ctxid)?;
     let (value, ctx_other) = ctx.lattice_lookup(&JsValue(key))?;
-    let ctxid_other = state.resource_table.add(ContextResource::LatticeImmut(ctx_other));
+    let ctxid_other = state.resource_table.add(ContextResource::new(DynContext::LatticeImmut(ctx_other)));
+    ctx.deps.lock().unwrap().push(ctxid_other);
     Ok((value.0, ctxid_other))
 }
 
@@ -121,7 +143,8 @@ async fn op_lattice_lookup(state: &mut OpState, ctxid: u32, key: SerdeJsValue) -
 async fn op_eval_lat_computation(state: &mut OpState, ctxid: u32, key: SerdeJsValue) -> Result<(SerdeJsValue, u32), AnyError> {
     let ctx = state.resource_table.get::<ContextResource>(ctxid)?;
     let (value, ctx_other) = ctx.eval_lat_computation(&JsValue(key))?;
-    let ctxid_other = state.resource_table.add(ContextResource::LatticeImmut(ctx_other));
+    let ctxid_other = state.resource_table.add(ContextResource::new(DynContext::LatticeImmut(ctx_other)));
+    ctx.deps.lock().unwrap().push(ctxid_other);
     Ok((value.0, ctxid_other))
 }
 
@@ -129,22 +152,27 @@ async fn op_eval_lat_computation(state: &mut OpState, ctxid: u32, key: SerdeJsVa
 async fn op_lattice_join(state: &mut OpState, ctxid: u32, key: SerdeJsValue, value: SerdeJsValue, ctxid_other: u32) -> Result<SerdeJsValue, AnyError> {
     let ctx = state.resource_table.get::<ContextResource>(ctxid)?;
     let ctx_other = state.resource_table.get::<ContextResource>(ctxid_other)?;
-    let other_arc: Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>> = match ctx_other.as_ref() {
-        ContextResource::ComputationImmut(ctx) => bail!("Cannot lattice_join with ComputationImmutContext"),
-        ContextResource::LatticeImmut(ctx) => ctx.clone(),
-        ContextResource::LatticeMut(ctx) => ctx.clone().as_lattice_immut_ctx(),
+    let other_arc: Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>> = match &ctx_other.context {
+        DynContext::ComputationImmut(ctx) => bail!("Cannot lattice_join with ComputationImmutContext"),
+        DynContext::LatticeImmut(ctx) => ctx.clone(),
+        DynContext::LatticeMut(ctx) => ctx.clone().as_lattice_immut_ctx(),
     };
     let value = ctx.lattice_join(&JsValue(key), &JsValue(value), other_arc)?;
     Ok(value.0)
 }
 
 fn main() {
-  // Build a deno_core::Extension providing custom ops
-  let ext = Extension::builder()
-    .ops(vec![
-      op_hash_lookup::decl(),
-    ])
-    .build();
+    // Build a deno_core::Extension providing custom ops
+    let ext = Extension::builder()
+        .ops(vec![
+            op_hash_lookup::decl(),
+            op_eval_computation::decl(),
+            op_hash_put::decl(),
+            op_lattice_lookup::decl(),
+            op_eval_lat_computation::decl(),
+            op_lattice_join::decl(),
+        ])
+        .build();
 
   // Initialize a runtime instance
   let mut runtime = JsRuntime::new(RuntimeOptions {
