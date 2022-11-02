@@ -5,11 +5,12 @@ use std::sync::mpsc::{channel, Sender, Receiver};
 use std::rc::Rc;
 use core::cmp::Ordering;
 
+use futures::future::poll_fn;
 use futures::channel::oneshot;
 use anyhow::{anyhow, bail};
 use serde::{Serialize, Deserialize};
 use deno_core::serde_v8::{to_v8, from_v8};
-use deno_core::v8::{Value as V8Value, Function as V8Function, Local};
+use deno_core::v8::{Value as V8Value, Function as V8Function, Local, Global};
 use deno_core::error::AnyError;
 use deno_core::{JsRuntime, Extension, RuntimeOptions, op, OpState, Resource};
 use deno_core::serde_json::{Value as JsValue, to_string as json_to_string};
@@ -155,7 +156,7 @@ async fn op_lattice_join(state: &mut OpState, globalid: u32, ctxid: CtxId, key: 
 
 
 struct RuntimeState {
-    runtime: JsRuntime,
+    runtime: Arc<Mutex<JsRuntime>>,
     script: String,
     global_id: u32,
     receiver: Receiver<MessageToRuntime>,
@@ -187,16 +188,27 @@ impl RuntimeState {
             }),
             sender: from_runtime_sender,
         });
-        (Self { runtime, script, receiver: to_runtime_receiver, global_id }, to_runtime_sender, from_runtime_receiver)
+        (Self { runtime: Arc::new(Mutex::new(runtime)), script, receiver: to_runtime_receiver, global_id }, to_runtime_sender, from_runtime_receiver)
     }
-    fn call_function(&mut self, path: &str, args: &[JsValue]) -> Result<JsValue, AnyError> {
-        let mut scope = self.runtime.handle_scope();
+    async fn call_function(&mut self, path: &str, args: &[JsValue]) -> Result<JsValue, AnyError> {
+        let mut runtime = self.runtime.lock().unwrap();
+        let mut scope = runtime.handle_scope();
         let recv = to_v8(&mut scope, JsValue::Null)?;
         let fun: Local<'_, V8Function> = JsRuntime::grab_global(&mut scope, path).ok_or(anyhow!("Could not find function {}", path))?;
         let v8_args = args.iter().map(|v| to_v8(&mut scope, v.clone())).collect::<Result<Vec<_>, _>>()?;
         let opt_res = fun.call(&mut scope, recv, &v8_args);
-        let res = opt_res.ok_or(anyhow!("Could not call function {}", path))?;
-        Ok(from_v8(&mut scope, res)?)
+        let res_local = opt_res.ok_or(anyhow!("Could not call function {}", path))?;
+        let res_global = Global::new(&mut *scope, res_local);
+        let runtime_arc = self.runtime.clone();
+        poll_fn(move |ctx| {
+            let mut runtime = runtime_arc.lock().unwrap();
+            let poll = runtime.poll_value(&res_global, ctx);
+            poll.map(|res_glob| {
+                let mut scope = runtime.handle_scope();
+                let local = Local::new(&mut scope, res_glob?);
+                Ok(from_v8(&mut scope, local)?)
+            })
+        }).await
     }
     pub fn process_messages(&mut self) {
         while let Ok(msg) = self.receiver.try_recv() {
@@ -231,7 +243,7 @@ impl RuntimeState {
                     // self.runtime.op_state().borrow_mut().borrow::<GlobalResource>(self.global_id).sender.send(MessageFromRuntime::LibraryResult(query_id, result)).unwrap();
                 },
                 MessageToRuntime::CtxResult(query_id, result) => {
-                    let global = self.runtime.op_state().borrow_mut().resource_table.get::<GlobalResource>(self.global_id).unwrap();
+                    let global = self.runtime.lock().unwrap().op_state().borrow_mut().resource_table.get::<GlobalResource>(self.global_id).unwrap();
                     let mut query_state = global.query_state.lock().unwrap();
                     let query_receiver = query_state.query_receivers.remove(&query_id).unwrap();
                     query_receiver.send(result).unwrap();
