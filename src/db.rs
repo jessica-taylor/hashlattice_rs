@@ -355,48 +355,67 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeMutContext<C, L, LC> for LatStore<C, L, LC> {}
 
-// impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatStore<C, L, LC> {
-// 
-//     async fn lattice_join(&self, key: &L::Key, merkle: LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>, ctx_other: Arc<dyn HashLookup>) -> Res<L::Value> {
-//         // TODO: we need to unify the dependencies of the two contexts
-//         let db_value = self.get_db().get_value(&LatDBKey::Lattice(key.clone()))?;
-//         let new_value = match db_value {
-//             None => value.clone(),
-//             Some(LatDBValue::Lattice(old_merkle_hash)) => {
-//                 let old_merkle = self.hash_lookup_generic(old_merkle_hash).await?;
-//                 let old_merkle_value2 = old_merkle.value.clone();
-//                 let ((), old_deps) = self.with_get_deps(move |this| async move {
-//                     this.lat_lib.clone().check_elem(key, &old_merkle_value2, this).await
-//                 }).await?;
-//                 // assume it's already been transported??
-//                 let joined = self.lat_lib.join(key, &old_merkle.value, &value, Arc::new(self.clone())).await?;
-//                 if joined == old_merkle.value {
-//                     return Ok(old_merkle.value);
-//                 }
-//                 joined
-//             }
-//             _ => bail!("lattice value is not a lattice")
-//         };
-//         let value = self.lat_lib.transport(key, value, ctx_other, Arc::new(self.clone())).await?;
-//         let bot = self.lat_lib.bottom(key).await?;
-//         let new_value2 = new_value.clone();
-//         let ((), deps) = self.with_get_deps(move |this| async move {
-//             this.lat_lib.clone().check_elem(key, &new_value2, this).await
-//         }).await?;
-//         let merkle_deps = deps.to_merkle_deps();
-//         if new_value == bot && merkle_deps.is_empty() {
-//             self.get_db().clear_value_deps(&LatDBKey::Lattice(key.clone()))?;
-//         } else {
-//             let merkle_hash = self.hash_put_generic(&LatMerkleNode {
-//                 value: new_value.clone(),
-//                 deps: deps.to_merkle_deps()
-//             }).await?;
-//             self.get_db().set_value_deps(LatDBKey::Lattice(key.clone()), LatDBValue::Lattice(merkle_hash), deps.to_keys())?;
-//             self.update_dirty().await?;
-//         }
-//         Ok(new_value)
-//     }
-// }
+impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatStore<C, L, LC> {
+
+    async fn lattice_join(&self, key: &L::Key, merkle: LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>, other_hashlookup: Arc<dyn HashLookup>) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
+        let db_value = self.get_db().get_value(&LatDBKey::Lattice(key.clone()))?;
+        let lat_lib = self.lat_lib.clone();
+        let (new_value, deps) = match db_value {
+            None => {
+                let other_ctx = LatStoreJoinedCtx {
+                    store: Arc::new(self.clone()),
+                    store_deps: Arc::new(LatMerkleNodeDeps::new()),
+                    other_hashlookup,
+                    other_deps: Arc::new(merkle.deps)
+                };
+                LatDepsTracker::with_get_deps(&other_ctx, move |other| async move {
+                    lat_lib.check_elem(key, &merkle.value, other).await?;
+                    Ok(merkle.value)
+                }).await?
+            },
+            Some(LatDBValue::Lattice(old_merkle_hash)) => {
+                let old_merkle = self.hash_lookup_generic(old_merkle_hash).await?;
+                let join_ctx = Arc::new(LatStoreJoinedCtx {
+                    store: Arc::new(self.clone()),
+                    store_deps: Arc::new(old_merkle.deps),
+                    other_hashlookup,
+                    other_deps: Arc::new(merkle.deps),
+                });
+                let store_tr = lat_lib.transport(key, &old_merkle.value, Arc::new(join_ctx.no_other_deps()), join_ctx.clone()).await?;
+                let other_tr = lat_lib.transport(key, &merkle.value, Arc::new(join_ctx.no_store_deps()), join_ctx.clone()).await?;
+                let joined = match store_tr {
+                    None => other_tr,
+                    Some(store_tr) => match other_tr {
+                        None => Some(store_tr),
+                        Some(other_tr) => lat_lib.join(key, &store_tr, &other_tr, join_ctx.clone()).await?
+                    }
+                };
+                match joined {
+                    None => {
+                        self.get_db().clear_value_deps(&LatDBKey::Lattice(key.clone()))?;
+                        return Ok(None)
+                    },
+                    Some(joined) => {
+                        LatDepsTracker::with_get_deps(&*join_ctx, move |join_ctx| async move {
+                            lat_lib.check_elem(key, &joined, join_ctx).await?;
+                            Ok(joined)
+                        }).await?
+                    }
+                }
+            }
+            _ => bail!("lattice value is not a lattice")
+        };
+        let merkle_deps = deps.to_merkle_deps();
+        let merkle_hash = self.hash_put_generic(&LatMerkleNode {
+            value: new_value.clone(),
+            deps: deps.to_merkle_deps()
+        }).await?;
+        self.get_db().set_value_deps(LatDBKey::Lattice(key.clone()), LatDBValue::Lattice(merkle_hash), deps.to_keys())?;
+        self.update_dirty().await?;
+        Ok(Some(merkle_hash))
+    }
+}
+
 pub struct LatStoreJoinedCtx<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> {
     store: Arc<LatStore<C, L, LC>>,
     store_deps: Arc<LatMerkleNodeDeps<L::Key, L::Value, LC::Key, LC::Value>>,
@@ -519,23 +538,24 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                 let store_tr = self.store.lat_lib.transport(key, &store_merkle.value, Arc::new(inner_join_ctx.no_other_deps()), inner_join_ctx.clone()).await?;
                 let other_tr = self.store.lat_lib.transport(key, &other_merkle.value, Arc::new(inner_join_ctx.no_store_deps()), inner_join_ctx.clone()).await?;
                 let joined = match store_tr {
-                    None => match other_tr {
-                        None => {
-                            self.store.get_db().clear_value_deps(&LatDBKey::Lattice(key.clone()))?;
-                            return Ok(None)
-                        }
-                        Some(other_tr) => other_tr,
-                    }
+                    None => other_tr,
                     Some(store_tr) => match other_tr {
-                        None => store_tr,
-                        Some(other_tr) => self.store.lat_lib.join(key, &store_tr, &other_tr, inner_join_ctx.clone()).await?
+                        None => Some(store_tr),
+                        Some(other_tr) => lat_lib.join(key, &store_tr, &other_tr, inner_join_ctx.clone()).await?
                     }
                 };
-                let joined2 = joined.clone();
-                let ((), deps) = LatDepsTracker::<C, L, LC, _>::with_get_deps(self, move |this| async move {
-                    lat_lib.check_elem(&key, &joined2, inner_join_ctx).await
-                }).await?;
-                (joined, deps)
+                match joined {
+                    None => {
+                        self.store.get_db().clear_value_deps(&LatDBKey::Lattice(key.clone()))?;
+                        return Ok(None)
+                    },
+                    Some(joined) => {
+                        LatDepsTracker::<C, L, LC, _>::with_get_deps(self, move |this| async move {
+                            lat_lib.check_elem(&key, &joined, inner_join_ctx).await?;
+                            Ok(joined)
+                        }).await?
+                    }
+                }
             }
         };
         let merkle = LatMerkleNode {
