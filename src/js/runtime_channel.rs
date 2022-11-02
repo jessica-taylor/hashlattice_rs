@@ -5,7 +5,8 @@ use std::sync::mpsc::{channel, Sender, Receiver};
 use std::rc::Rc;
 use core::cmp::Ordering;
 
-use futures::future::poll_fn;
+use futures::Future;
+use futures::future::{FutureExt, poll_fn};
 use futures::channel::oneshot;
 use anyhow::{anyhow, bail};
 use serde::{Serialize, Deserialize};
@@ -160,6 +161,7 @@ struct RuntimeState {
     script: String,
     global_id: u32,
     receiver: Receiver<MessageToRuntime>,
+    library_futures: BTreeMap<QueryId, Box<dyn Future<Output = Res<LibraryResult>>>>,
 }
 
 impl RuntimeState {
@@ -188,20 +190,26 @@ impl RuntimeState {
             }),
             sender: from_runtime_sender,
         });
-        (Self { runtime: Arc::new(Mutex::new(runtime)), script, receiver: to_runtime_receiver, global_id }, to_runtime_sender, from_runtime_receiver)
+        (Self {
+            runtime: Arc::new(Mutex::new(runtime)),
+            script,
+            receiver: to_runtime_receiver,
+            global_id,
+            library_futures: BTreeMap::new(),
+        }, to_runtime_sender, from_runtime_receiver)
     }
-    async fn call_function(&mut self, path: &str, args: &[JsValue]) -> Result<JsValue, AnyError> {
-        let mut runtime = self.runtime.lock().unwrap();
+    async fn call_function(runtime_arc: Arc<Mutex<JsRuntime>>, path: String, args: Vec<JsValue>) -> Result<JsValue, AnyError> {
+        let mut runtime = runtime_arc.lock().unwrap();
         let mut scope = runtime.handle_scope();
         let recv = to_v8(&mut scope, JsValue::Null)?;
-        let fun: Local<'_, V8Function> = JsRuntime::grab_global(&mut scope, path).ok_or(anyhow!("Could not find function {}", path))?;
+        let fun: Local<'_, V8Function> = JsRuntime::grab_global(&mut scope, &path).ok_or(anyhow!("Could not find function {}", path))?;
         let v8_args = args.iter().map(|v| to_v8(&mut scope, v.clone())).collect::<Result<Vec<_>, _>>()?;
         let opt_res = fun.call(&mut scope, recv, &v8_args);
         let res_local = opt_res.ok_or(anyhow!("Could not call function {}", path))?;
         let res_global = Global::new(&mut *scope, res_local);
-        let runtime_arc = self.runtime.clone();
+        let runtime_arc2 = runtime_arc.clone();
         poll_fn(move |ctx| {
-            let mut runtime = runtime_arc.lock().unwrap();
+            let mut runtime = runtime_arc2.lock().unwrap();
             let poll = runtime.poll_value(&res_global, ctx);
             poll.map(|res_glob| {
                 let mut scope = runtime.handle_scope();
@@ -210,37 +218,34 @@ impl RuntimeState {
             })
         }).await
     }
+    fn register_call_function(&mut self, query_id: QueryId, path: &str, args: Vec<JsValue>, res_handler: impl 'static + FnOnce(JsValue) -> Res<LibraryResult>) {
+        let fut = Self::call_function(self.runtime.clone(), path.to_string(), args).map(|res| res_handler(res?));
+        self.library_futures.insert(query_id, Box::new(fut));
+    }
     pub fn process_messages(&mut self) {
         while let Ok(msg) = self.receiver.try_recv() {
             match msg {
                 MessageToRuntime::LibraryQuery(query_id, query) => {
-                    // let result = match query {
-                    //     LibraryQuery::HashLookup(hash) => {
-                    //         let value = self.runtime.op_state().borrow_mut().borrow::<GlobalResource>(self.global_id).hash_lookup(hash);
-                    //         LibraryResult::HashLookup(value)
-                    //     },
-                    //     LibraryQuery::EvalComputation(key) => {
-                    //         let value = self.runtime.op_state().borrow_mut().borrow::<GlobalResource>(self.global_id).eval_computation(key);
-                    //         LibraryResult::EvalComputation(value)
-                    //     },
-                    //     LibraryQuery::HashPut(value) => {
-                    //         let hash = self.runtime.op_state().borrow_mut().borrow::<GlobalResource>(self.global_id).hash_put(value);
-                    //         LibraryResult::HashPut(hash)
-                    //     },
-                    //     LibraryQuery::LatticeLookup(key) => {
-                    //         let (value, ctxid) = self.runtime.op_state().borrow_mut().borrow::<GlobalResource>(self.global_id).lattice_lookup(key);
-                    //         LibraryResult::LatticeLookup(value, ctxid)
-                    //     },
-                    //     LibraryQuery::EvalLatComputation(key) => {
-                    //         let (value, ctxid) = self.runtime.op_state().borrow_mut().borrow::<GlobalResource>(self.global_id).eval_lat_computation(key);
-                    //         LibraryResult::EvalLatComputation(value, ctxid)
-                    //     },
-                    //     LibraryQuery::LatticeJoin(key, value, ctxid_other) => {
-                    //         let value = self.runtime.op_state().borrow_mut().borrow::<GlobalResource>(self.global_id).lattice_join(key, value, ctxid_other);
-                    //         LibraryResult::LatticeJoin(value)
-                    //     },
-                    // };
-                    // self.runtime.op_state().borrow_mut().borrow::<GlobalResource>(self.global_id).sender.send(MessageFromRuntime::LibraryResult(query_id, result)).unwrap();
+                    match query {
+                        LibraryQuery::EvalComputation(key, ctxid) => {
+                            self.register_call_function(query_id, "eval_computation", vec![key, JsValue::from(ctxid)], |res| Ok(LibraryResult::EvalComputation(res)));
+                        },
+                        LibraryQuery::CheckElem(key, value, ctxid) => {
+                            self.register_call_function(query_id, "hash_put", vec![key, value, JsValue::from(ctxid)], |res| Ok(LibraryResult::CheckElem));
+                        },
+                        LibraryQuery::Join(key, value1, value2, ctxid) => {
+                            self.register_call_function(query_id, "lattice_join", vec![key, value1, value2, JsValue::from(ctxid)], |res| Ok(LibraryResult::Join(res)));
+                        },
+                        LibraryQuery::Bottom(key) => {
+                            self.register_call_function(query_id, "lattice_lookup", vec![key], |res| Ok(LibraryResult::Bottom(res)));
+                        },
+                        LibraryQuery::Transport(key, value, old_ctxid, new_ctxid) => {
+                            self.register_call_function(query_id, "eval_lat_computation", vec![key, value, JsValue::from(old_ctxid), JsValue::from(new_ctxid)], |res| Ok(LibraryResult::Transport(res)));
+                        },
+                        LibraryQuery::EvalLatComputation(key, ctxid) => {
+                            self.register_call_function(query_id, "eval_lat_computation", vec![key, JsValue::from(ctxid)], |res| Ok(LibraryResult::EvalLatComputation(res)));
+                        },
+                    }
                 },
                 MessageToRuntime::CtxResult(query_id, result) => {
                     let global = self.runtime.lock().unwrap().op_state().borrow_mut().resource_table.get::<GlobalResource>(self.global_id).unwrap();
