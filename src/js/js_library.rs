@@ -67,38 +67,38 @@ impl ContextResource {
     }
     async fn hash_lookup(&self, hash: HashCode) -> Res<Vec<u8>> {
         match &self.context {
-            DynContext::ComputationImmut(ctx) => ctx.clone().hash_lookup(hash).await,
-            DynContext::LatticeImmut(ctx) => ctx.clone().hash_lookup(hash).await,
-            DynContext::LatticeMut(ctx) => ctx.clone().hash_lookup(hash).await,
+            DynContext::ComputationImmut(ctx) => ctx.hash_lookup(hash).await,
+            DynContext::LatticeImmut(ctx) => ctx.hash_lookup(hash).await,
+            DynContext::LatticeMut(ctx) => ctx.hash_lookup(hash).await,
         }
     }
     async fn eval_computation(&self, key: &JsValue) -> Res<JsValue> {
         match &self.context {
-            DynContext::ComputationImmut(ctx) => ctx.clone().eval_computation(key).await,
-            DynContext::LatticeImmut(ctx) => ctx.clone().eval_computation(key).await,
-            DynContext::LatticeMut(ctx) => ctx.clone().eval_computation(key).await,
+            DynContext::ComputationImmut(ctx) => ctx.eval_computation(key).await,
+            DynContext::LatticeImmut(ctx) => ctx.eval_computation(key).await,
+            DynContext::LatticeMut(ctx) => ctx.eval_computation(key).await,
         }
     }
     async fn hash_put(&self, value: Vec<u8>) -> Res<HashCode> {
         match &self.context {
             DynContext::ComputationImmut(ctx) => bail!("Cannot hash_put in ComputationImmutContext"),
             DynContext::LatticeImmut(ctx) => bail!("Cannot hash_put in LatticeImmutContext"),
-            DynContext::LatticeMut(ctx) => ctx.clone().hash_put(value).await,
+            DynContext::LatticeMut(ctx) => ctx.hash_put(value).await,
         }
     }
     async fn lattice_lookup(&self, key: &JsValue) -> Res<(JsValue, Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>>)> {
         match &self.context {
             DynContext::ComputationImmut(ctx) => bail!("Cannot lattice_lookup in ComputationImmutContext"),
-            DynContext::LatticeImmut(ctx) => ctx.clone().lattice_lookup(key).await,
-            DynContext::LatticeMut(ctx) => ctx.clone().lattice_lookup(key).await,
+            DynContext::LatticeImmut(ctx) => ctx.lattice_lookup(key).await,
+            DynContext::LatticeMut(ctx) => ctx.lattice_lookup(key).await,
         }
     }
 
     async fn eval_lat_computation(&self, key: &JsValue) -> Res<(JsValue, Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>>)> {
         match &self.context {
             DynContext::ComputationImmut(ctx) => bail!("Cannot eval_lat_computation in ComputationImmutContext"),
-            DynContext::LatticeImmut(ctx) => ctx.clone().eval_lat_computation(key).await,
-            DynContext::LatticeMut(ctx) => ctx.clone().eval_lat_computation(key).await,
+            DynContext::LatticeImmut(ctx) => ctx.eval_lat_computation(key).await,
+            DynContext::LatticeMut(ctx) => ctx.eval_lat_computation(key).await,
         }
     }
 
@@ -106,7 +106,7 @@ impl ContextResource {
         match &self.context {
             DynContext::ComputationImmut(ctx) => bail!("Cannot lattice_join in ComputationImmutContext"),
             DynContext::LatticeImmut(ctx) => bail!("Cannot lattice_join in LatticeImmutContext"),
-            DynContext::LatticeMut(ctx) => ctx.clone().lattice_join(key, value, ctx_other).await,
+            DynContext::LatticeMut(ctx) => ctx.lattice_join(key, value, ctx_other).await,
         }
     }
 }
@@ -155,7 +155,7 @@ async fn op_lattice_join(state: &mut OpState, ctxid: u32, key: SerdeJsValue, val
     let other_arc: Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>> = match &ctx_other.context {
         DynContext::ComputationImmut(ctx) => bail!("Cannot lattice_join with ComputationImmutContext"),
         DynContext::LatticeImmut(ctx) => ctx.clone(),
-        DynContext::LatticeMut(ctx) => ctx.clone().as_lattice_immut_ctx(),
+        DynContext::LatticeMut(ctx) => ctx.as_lattice_immut_ctx(),
     };
     let value = ctx.lattice_join(&JsValue(key), &JsValue(value), other_arc).await?;
     Ok(value.0)
