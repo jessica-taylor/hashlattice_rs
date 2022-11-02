@@ -2,6 +2,7 @@ use std::sync::{Arc, Mutex};
 use std::rc::Rc;
 use core::cmp::Ordering;
 
+use async_trait::async_trait;
 use anyhow::bail;
 use serde::{Serialize, Deserialize};
 use deno_core::error::AnyError;
@@ -208,9 +209,10 @@ try {
     .unwrap();
 }
 
+#[derive(Clone)]
 pub struct JsLibrary {
-    runtime: JsRuntime,
-    script: String,
+    runtime: Arc<Mutex<JsRuntime>>,
+    script: Arc<String>,
 }
 
 impl JsLibrary {
@@ -230,19 +232,17 @@ impl JsLibrary {
             extensions: vec![ext],
             ..Default::default()
         });
-        Self { runtime, script }
+        Self { runtime: Arc::new(Mutex::new(runtime)), script: Arc::new(script) }
     }
 }
 
-// impl ComputationLibrary<JsMapping> for JsLibrary {
-//     fn eval_computation(&self, key: &JsValue, ctx: Arc<dyn ComputationImmutContext<JsMapping>>) -> Res<JsValue> {
-//         let ctx_ix = self.comp_immut_stack.len();
-//         self.comp_immut_stack.push(ctx);
-//         let res = self.script.call("eval_computation_trampoline", (key.clone(), ctx_ix)).and_then(|res| self.trampoline(res));
-//         self.comp_immut_stack.pop();
-//         res
-//     }
-// }
+#[async_trait(?Send)]
+impl ComputationLibrary<JsMapping> for JsLibrary {
+    async fn eval_computation(&self, key: &JsValue, ctx: Arc<dyn ComputationImmutContext<JsMapping>>) -> Res<JsValue> {
+        let ctxid = self.runtime.lock().unwrap().op_state().borrow_mut().resource_table.add(ContextResource::new(DynContext::ComputationImmut(ctx)));
+        bail!("not implemented")
+    }
+}
 // 
 // impl LatticeLibrary<JsMapping, JsMapping, JsMapping> for JsLibrary {
 //     fn check_elem(&self, key: &JsValue, value: &JsValue, ctx: Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>>) -> Res<()> {
