@@ -6,8 +6,10 @@ use std::rc::Rc;
 use core::cmp::Ordering;
 
 use futures::channel::oneshot;
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use serde::{Serialize, Deserialize};
+use deno_core::serde_v8::{to_v8, from_v8};
+use deno_core::v8::{Value as V8Value, Function as V8Function, Local};
 use deno_core::error::AnyError;
 use deno_core::{JsRuntime, Extension, RuntimeOptions, op, OpState, Resource};
 use deno_core::serde_json::{Value as JsValue, to_string as json_to_string};
@@ -186,6 +188,15 @@ impl RuntimeState {
             sender: from_runtime_sender,
         });
         (Self { runtime, script, receiver: to_runtime_receiver, global_id }, to_runtime_sender, from_runtime_receiver)
+    }
+    fn call_function(&mut self, path: &str, args: &[JsValue]) -> Result<JsValue, AnyError> {
+        let mut scope = self.runtime.handle_scope();
+        let recv = to_v8(&mut scope, JsValue::Null)?;
+        let fun: Local<'_, V8Function> = JsRuntime::grab_global(&mut scope, path).ok_or(anyhow!("Could not find function {}", path))?;
+        let v8_args = args.iter().map(|v| to_v8(&mut scope, v.clone())).collect::<Result<Vec<_>, _>>()?;
+        let opt_res = fun.call(&mut scope, recv, &v8_args);
+        let res = opt_res.ok_or(anyhow!("Could not call function {}", path))?;
+        Ok(from_v8(&mut scope, res)?)
     }
     pub fn process_messages(&mut self) {
         while let Ok(msg) = self.receiver.try_recv() {
