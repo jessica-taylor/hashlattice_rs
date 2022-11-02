@@ -509,10 +509,13 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 #[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeImmutContext<C, L, LC> for LatStoreJoinedCtx<C, L, LC> {
     async fn lattice_lookup(&self, key: &L::Key) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
-        let store_dep = self.store_deps.lat_deps.get(key);
-        let other_dep = self.other_deps.lat_deps.get(key);
+        let store_dep = match self.store_deps.lat_deps.get(key) {
+            Some(h) => Some(*h),
+            None => self.store.lattice_lookup(key).await?,
+        };
+        let other_dep = self.other_deps.lat_deps.get(key).cloned();
         if store_dep == other_dep || other_dep.is_none() {
-            return Ok(store_dep.map(|x| *x));
+            return Ok(store_dep);
         }
         let other_dep = other_dep.unwrap();
         let lat_lib = self.store.lat_lib.clone();
@@ -563,7 +566,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             deps: deps.to_merkle_deps()
         };
         let merkle_hash = self.store.hash_put_generic(&merkle).await?;
-        if store_dep.is_none() || *store_dep.unwrap() != merkle_hash {
+        if store_dep != Some(merkle_hash) {
             self.store.get_db().set_value_deps(LatDBKey::Lattice(key.clone()), LatDBValue::Lattice(merkle_hash), deps.to_keys())?;
             self.store.update_dirty().await?;
         }
