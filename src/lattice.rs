@@ -8,24 +8,24 @@ use crate::error::Res;
 use crate::crypto::HashCode;
 use crate::tagged_mapping::{TaggedMapping};
 
-#[async_trait(?Send)]
-pub trait HashLookup {
+#[async_trait]
+pub trait HashLookup : Send + Sync {
 
     async fn hash_lookup(&self, hash: HashCode) -> Res<Vec<u8>> {
         bail!("hash_lookup not implemented")
     }
 }
 
-#[async_trait(?Send)]
-pub trait ComputationImmutContext<C: TaggedMapping> : HashLookup {
+#[async_trait]
+pub trait ComputationImmutContext<C: TaggedMapping> : HashLookup + Send + Sync {
 
     async fn eval_computation(&self, key: &C::Key) -> Res<C::Value> {
         bail!("eval_computation not implemented")
     }
 }
 
-#[async_trait(?Send)]
-pub trait ComputationMutContext<C: TaggedMapping> : ComputationImmutContext<C> {
+#[async_trait]
+pub trait ComputationMutContext<C: TaggedMapping> : ComputationImmutContext<C> + Send + Sync {
 
     async fn hash_put(&self, value: Vec<u8>) -> Res<HashCode> {
         bail!("hash_put not implemented")
@@ -33,8 +33,8 @@ pub trait ComputationMutContext<C: TaggedMapping> : ComputationImmutContext<C> {
 
 }
 
-#[async_trait(?Send)]
-pub trait ComputationLibrary<C: TaggedMapping + 'static> {
+#[async_trait]
+pub trait ComputationLibrary<C: TaggedMapping + 'static> : Send + Sync {
 
     async fn eval_computation(&self, key: &C::Key, ctx: Arc<dyn ComputationImmutContext<C>>) -> Res<C::Value> {
         bail!("eval_computation not implemented")
@@ -42,8 +42,8 @@ pub trait ComputationLibrary<C: TaggedMapping + 'static> {
 }
 
 
-#[async_trait(?Send)]
-pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> {
+#[async_trait]
+pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> : Send + Sync {
 
     async fn check_elem(&self, key: &L::Key, value: &L::Value, ctx: Arc<dyn LatticeImmutContext<C, L, LC>>) -> Res<()> {
         bail!("check_elem not implemented")
@@ -66,7 +66,7 @@ pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static,
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 pub trait LatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> : ComputationImmutContext<C> {
 
     async fn lattice_lookup(&self, key: &L::Key) -> Res<(L::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)>;
@@ -85,7 +85,7 @@ impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping, T: 'static + Clone +
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 pub trait LatticeMutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping>: ComputationMutContext<C> + LatticeImmutContext<C, L, LC> + AsLatticeImmutContext<C, L, LC> {
 
     async fn lattice_join(&self, key: &L::Key, value: &L::Value, ctx_other: Arc<dyn LatticeImmutContext<C, L, LC>>) -> Res<L::Value>;
@@ -106,28 +106,28 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 #[derive(Clone)]
 pub struct EmptyContext;
 
-#[async_trait(?Send)]
+#[async_trait]
 impl HashLookup for EmptyContext {
     async fn hash_lookup(&self, hash: HashCode) -> Res<Vec<u8>> {
         bail!("EmptyHashLookup: no hash lookup for {:?}", hash)
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<C: TaggedMapping + 'static> ComputationImmutContext<C> for EmptyContext {
     async fn eval_computation(&self, key: &C::Key) -> Res<C::Value> {
         bail!("EmptyComputationImmutContext: no computation for {:?}", key)
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<C: TaggedMapping + 'static> ComputationMutContext<C> for EmptyContext {
     async fn hash_put(&self, value: Vec<u8>) -> Res<HashCode> {
         bail!("EmptyComputationMutContext: no hash put for {:?}", value)
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeImmutContext<C, L, LC> for EmptyContext {
 
     async fn lattice_lookup(&self, key: &L::Key) -> Res<(L::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)> {
@@ -139,7 +139,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeMutContext<C, L, LC> for EmptyContext {
     async fn lattice_join(&self, key: &L::Key, value: &L::Value, ctx_other: Arc<dyn LatticeImmutContext<C, L, LC>>) -> Res<L::Value> {
         bail!("EmptyLatticeMutContext: no lattice join for {:?} {:?}", key, value)

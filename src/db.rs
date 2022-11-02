@@ -245,7 +245,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> HashLookup for LatStore<C, L, LC> {
 
     async fn hash_lookup(&self, hash: HashCode) -> Res<Vec<u8>> {
@@ -260,7 +260,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> ComputationImmutContext<C> for LatStore<C, L, LC> {
 
     async fn eval_computation(&self, key: &C::Key) -> Res<C::Value> {
@@ -281,7 +281,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> ComputationMutContext<C> for LatStore<C, L, LC> {
 
     async fn hash_put(&self, value: Vec<u8>) -> Res<HashCode> {
@@ -295,7 +295,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeImmutContext<C, L, LC> for LatStore<C, L, LC> {
 
     async fn lattice_lookup(&self, key: &L::Key) -> Res<(L::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)> {
@@ -350,7 +350,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeMutContext<C, L, LC> for LatStore<C, L, LC> {
 
     async fn lattice_join(&self, key: &L::Key, value: &L::Value, ctx_other: Arc<dyn LatticeImmutContext<C, L, LC>>) -> Res<L::Value> {
@@ -407,14 +407,14 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> HashLookup for LatStoreImmutCtx<C, L, LC> {
     async fn hash_lookup(&self, hash: HashCode) -> Res<Vec<u8>> {
         self.store.clone().hash_lookup(hash).await
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> ComputationImmutContext<C> for LatStoreImmutCtx<C, L, LC> {
 
     async fn eval_computation(&self, key: &C::Key) -> Res<C::Value> {
@@ -422,7 +422,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
     }
 }
 
-#[async_trait(?Send)]
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeImmutContext<C, L, LC> for LatStoreImmutCtx<C, L, LC> {
     async fn lattice_lookup(&self, key: &L::Key) -> Res<(L::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)> {
         match self.deps.lat_deps.get(key) {
