@@ -96,6 +96,48 @@ async fn op_hash_lookup(state: &mut OpState, ctxid: u32, hash: HashCode) -> Resu
     ctx.hash_lookup(hash)
 }
 
+#[op]
+async fn op_eval_computation(state: &mut OpState, ctxid: u32, key: SerdeJsValue) -> Result<SerdeJsValue, AnyError> {
+    let ctx = state.resource_table.get::<ContextResource>(ctxid)?;
+    let value = ctx.eval_computation(&JsValue(key))?;
+    Ok(value.0)
+}
+
+#[op]
+async fn op_hash_put(state: &mut OpState, ctxid: u32, value: Vec<u8>) -> Result<HashCode, AnyError> {
+    let ctx = state.resource_table.get::<ContextResource>(ctxid)?;
+    ctx.hash_put(value)
+}
+
+#[op]
+async fn op_lattice_lookup(state: &mut OpState, ctxid: u32, key: SerdeJsValue) -> Result<(SerdeJsValue, u32), AnyError> {
+    let ctx = state.resource_table.get::<ContextResource>(ctxid)?;
+    let (value, ctx_other) = ctx.lattice_lookup(&JsValue(key))?;
+    let ctxid_other = state.resource_table.add(ContextResource::LatticeImmut(ctx_other));
+    Ok((value.0, ctxid_other))
+}
+
+#[op]
+async fn op_eval_lat_computation(state: &mut OpState, ctxid: u32, key: SerdeJsValue) -> Result<(SerdeJsValue, u32), AnyError> {
+    let ctx = state.resource_table.get::<ContextResource>(ctxid)?;
+    let (value, ctx_other) = ctx.eval_lat_computation(&JsValue(key))?;
+    let ctxid_other = state.resource_table.add(ContextResource::LatticeImmut(ctx_other));
+    Ok((value.0, ctxid_other))
+}
+
+#[op]
+async fn op_lattice_join(state: &mut OpState, ctxid: u32, key: SerdeJsValue, value: SerdeJsValue, ctxid_other: u32) -> Result<SerdeJsValue, AnyError> {
+    let ctx = state.resource_table.get::<ContextResource>(ctxid)?;
+    let ctx_other = state.resource_table.get::<ContextResource>(ctxid_other)?;
+    let other_arc: Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>> = match ctx_other.as_ref() {
+        ContextResource::ComputationImmut(ctx) => bail!("Cannot lattice_join with ComputationImmutContext"),
+        ContextResource::LatticeImmut(ctx) => ctx.clone(),
+        ContextResource::LatticeMut(ctx) => ctx.clone().as_lattice_immut_ctx(),
+    };
+    let value = ctx.lattice_join(&JsValue(key), &JsValue(value), other_arc)?;
+    Ok(value.0)
+}
+
 fn main() {
   // Build a deno_core::Extension providing custom ops
   let ext = Extension::builder()
