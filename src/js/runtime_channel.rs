@@ -54,7 +54,7 @@ enum CtxQuery {
     HashPut(JsValue),
     LatticeLookup(JsValue),
     EvalLatComputation(JsValue),
-    LatticeJoin(JsValue, JsValue, CtxId),
+    // LatticeJoin(JsValue, JsValue, CtxId),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,7 +64,7 @@ enum CtxResult {
     HashPut(Hash<JsValue>),
     LatticeLookup(JsValue, CtxId),
     EvalLatComputation(JsValue, CtxId),
-    LatticeJoin(JsValue),
+    // LatticeJoin(JsValue),
 }
 
 enum MessageToRuntime {
@@ -149,14 +149,14 @@ async fn op_eval_lat_computation(state: &mut OpState, globalid: u32, ctxid: CtxI
     }
 }
 
-#[op]
-async fn op_lattice_join(state: &mut OpState, globalid: u32, ctxid: CtxId, key: JsValue, value: JsValue, ctxid_other: CtxId) -> Result<JsValue, AnyError> {
-    if let CtxResult::LatticeJoin(value) = op_query(state, globalid, ctxid, CtxQuery::LatticeJoin(key, value, ctxid_other)).await? {
-        Ok(value)
-    } else {
-        bail!("Lattice join returned wrong result type")
-    }
-}
+// #[op]
+// async fn op_lattice_join(state: &mut OpState, globalid: u32, ctxid: CtxId, key: JsValue, value: JsValue, ctxid_other: CtxId) -> Result<JsValue, AnyError> {
+//     if let CtxResult::LatticeJoin(value) = op_query(state, globalid, ctxid, CtxQuery::LatticeJoin(key, value, ctxid_other)).await? {
+//         Ok(value)
+//     } else {
+//         bail!("Lattice join returned wrong result type")
+//     }
+// }
 
 
 #[derive(Clone)]
@@ -177,7 +177,7 @@ impl RuntimeState {
                 op_hash_put::decl(),
                 op_lattice_lookup::decl(),
                 op_eval_lat_computation::decl(),
-                op_lattice_join::decl(),
+                // op_lattice_join::decl(),
             ])
             .build();
 
