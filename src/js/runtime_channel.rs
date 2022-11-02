@@ -24,55 +24,51 @@ use crate::tagged_mapping::TaggedMapping;
 use crate::crypto::{Hash, HashCode, hash};
 use crate::lattice::{HashLookup, ComputationImmutContext, ComputationMutContext, ComputationLibrary, LatticeLibrary, LatticeImmutContext, LatticeMutContext};
 
-type QueryId = usize;
-type CtxId = usize;
+pub type QueryId = usize;
+pub type CtxId = usize;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-enum LibraryQuery {
+pub enum LibraryQuery {
     EvalComputation(JsValue, CtxId),
     CheckElem(JsValue, JsValue, CtxId),
     Join(JsValue, JsValue, JsValue, CtxId),
-    Bottom(JsValue),
     Transport(JsValue, JsValue, CtxId, CtxId),
     EvalLatComputation(JsValue, CtxId),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-enum LibraryResult {
+pub enum LibraryResult {
     EvalComputation(JsValue),
     CheckElem,
     Join(JsValue),
-    Bottom(JsValue),
     Transport(JsValue),
     EvalLatComputation(JsValue),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-enum CtxQuery {
+pub enum CtxQuery {
     HashLookup(Hash<JsValue>),
     EvalComputation(JsValue),
     HashPut(JsValue),
     LatticeLookup(JsValue),
     EvalLatComputation(JsValue),
-    // LatticeJoin(JsValue, JsValue, CtxId),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-enum CtxResult {
+pub enum CtxResult {
     HashLookup(JsValue),
     EvalComputation(JsValue),
     HashPut(Hash<JsValue>),
-    LatticeLookup(JsValue, CtxId),
-    EvalLatComputation(JsValue, CtxId),
-    // LatticeJoin(JsValue),
+    LatticeLookup(JsValue),
+    EvalLatComputation(JsValue),
 }
 
-enum MessageToRuntime {
+pub enum MessageToRuntime {
     LibraryQuery(QueryId, LibraryQuery),
     CtxResult(QueryId, Res<CtxResult>),
 }
 
-enum MessageFromRuntime {
+pub enum MessageFromRuntime {
     LibraryResult(QueryId, Res<LibraryResult>),
     CtxQuery(QueryId, CtxId, CtxQuery),
 }
@@ -113,14 +109,6 @@ async fn op_hash_lookup(state: &mut OpState, globalid: u32, ctxid: CtxId, hash: 
     }
 }
 
-#[op]
-async fn op_eval_computation(state: &mut OpState, globalid: u32, ctxid: CtxId, key: JsValue) -> Result<JsValue, AnyError> {
-    if let CtxResult::EvalComputation(value) = op_query(state, globalid, ctxid, CtxQuery::EvalComputation(key)).await? {
-        Ok(value)
-    } else {
-        bail!("Eval computation returned wrong result type")
-    }
-}
 
 #[op]
 async fn op_hash_put(state: &mut OpState, globalid: u32, ctxid: CtxId, value: JsValue) -> Result<HashCode, AnyError> {
@@ -132,35 +120,35 @@ async fn op_hash_put(state: &mut OpState, globalid: u32, ctxid: CtxId, value: Js
 }
 
 #[op]
-async fn op_lattice_lookup(state: &mut OpState, globalid: u32, ctxid: CtxId, key: JsValue) -> Result<(JsValue, CtxId), AnyError> {
-    if let CtxResult::LatticeLookup(value, v_ctxid) = op_query(state, globalid, ctxid, CtxQuery::LatticeLookup(key)).await? {
-        Ok((value, v_ctxid))
+async fn op_eval_computation(state: &mut OpState, globalid: u32, ctxid: CtxId, key: JsValue) -> Result<JsValue, AnyError> {
+    if let CtxResult::EvalComputation(value) = op_query(state, globalid, ctxid, CtxQuery::EvalComputation(key)).await? {
+        Ok(value)
+    } else {
+        bail!("Eval computation returned wrong result type")
+    }
+}
+
+#[op]
+async fn op_lattice_lookup(state: &mut OpState, globalid: u32, ctxid: CtxId, key: JsValue) -> Result<JsValue, AnyError> {
+    if let CtxResult::LatticeLookup(value) = op_query(state, globalid, ctxid, CtxQuery::LatticeLookup(key)).await? {
+        Ok(value)
     } else {
         bail!("Lattice lookup returned wrong result type")
     }
 }
 
 #[op]
-async fn op_eval_lat_computation(state: &mut OpState, globalid: u32, ctxid: CtxId, key: JsValue) -> Result<(JsValue, CtxId), AnyError> {
-    if let CtxResult::EvalLatComputation(value, v_ctxid) = op_query(state, globalid, ctxid, CtxQuery::EvalLatComputation(key)).await? {
-        Ok((value, v_ctxid))
+async fn op_eval_lat_computation(state: &mut OpState, globalid: u32, ctxid: CtxId, key: JsValue) -> Result<JsValue, AnyError> {
+    if let CtxResult::EvalLatComputation(value) = op_query(state, globalid, ctxid, CtxQuery::EvalLatComputation(key)).await? {
+        Ok(value)
     } else {
         bail!("Eval lat computation returned wrong result type")
     }
 }
 
-// #[op]
-// async fn op_lattice_join(state: &mut OpState, globalid: u32, ctxid: CtxId, key: JsValue, value: JsValue, ctxid_other: CtxId) -> Result<JsValue, AnyError> {
-//     if let CtxResult::LatticeJoin(value) = op_query(state, globalid, ctxid, CtxQuery::LatticeJoin(key, value, ctxid_other)).await? {
-//         Ok(value)
-//     } else {
-//         bail!("Lattice join returned wrong result type")
-//     }
-// }
-
 
 #[derive(Clone)]
-struct RuntimeState {
+pub struct RuntimeState {
     runtime: Arc<Mutex<JsRuntime>>,
     script: String,
     global_id: u32,
@@ -177,7 +165,6 @@ impl RuntimeState {
                 op_hash_put::decl(),
                 op_lattice_lookup::decl(),
                 op_eval_lat_computation::decl(),
-                // op_lattice_join::decl(),
             ])
             .build();
 
@@ -194,6 +181,8 @@ impl RuntimeState {
             }),
             sender: from_runtime_sender,
         });
+        runtime.execute_script("<globalid>", &format!("this.__globalid = {}", global_id)).unwrap();
+        runtime.execute_script("<script>", &script).unwrap();
         (Self {
             runtime: Arc::new(Mutex::new(runtime)),
             script,
@@ -269,11 +258,8 @@ impl RuntimeState {
                             LibraryQuery::Join(key, value1, value2, ctxid) => {
                                 self.register_call_function(query_id, "lattice_join", vec![key, value1, value2, JsValue::from(ctxid)], |res| Ok(LibraryResult::Join(res)));
                             },
-                            LibraryQuery::Bottom(key) => {
-                                self.register_call_function(query_id, "lattice_lookup", vec![key], |res| Ok(LibraryResult::Bottom(res)));
-                            },
                             LibraryQuery::Transport(key, value, old_ctxid, new_ctxid) => {
-                                self.register_call_function(query_id, "eval_lat_computation", vec![key, value, JsValue::from(old_ctxid), JsValue::from(new_ctxid)], |res| Ok(LibraryResult::Transport(res)));
+                                self.register_call_function(query_id, "transport", vec![key, value, JsValue::from(old_ctxid), JsValue::from(new_ctxid)], |res| Ok(LibraryResult::Transport(res)));
                             },
                             LibraryQuery::EvalLatComputation(key, ctxid) => {
                                 self.register_call_function(query_id, "eval_lat_computation", vec![key, JsValue::from(ctxid)], |res| Ok(LibraryResult::EvalLatComputation(res)));
