@@ -1,8 +1,11 @@
+use core::cmp::Ordering;
 use std::sync::{Arc, Mutex};
 use std::rc::Rc;
-use core::cmp::Ordering;
-use std::sync::mpsc::{Sender, Receiver, TryRecvError};
+use std::sync::mpsc::{Sender, Receiver, channel, TryRecvError};
+use std::collections::BTreeMap;
+use std::thread::{spawn, JoinHandle};
 
+use futures::executor::block_on;
 use async_trait::async_trait;
 use anyhow::bail;
 use serde::{Serialize, Deserialize};
@@ -14,7 +17,7 @@ use crate::error::Res;
 use crate::tagged_mapping::TaggedMapping;
 use crate::crypto::{Hash, HashCode, hash};
 use crate::lattice::{HashLookup, ComputationImmutContext, ComputationMutContext, ComputationLibrary, LatticeLibrary, LatticeImmutContext, LatticeMutContext, LatMerkleNode};
-use crate::js::runtime_channel::{RuntimeState, LibraryQuery, LibraryResult, CtxQuery, CtxResult, MessageToRuntime, MessageFromRuntime};
+use crate::js::runtime_channel::{RuntimeState, CtxId, QueryId, LibraryQuery, LibraryResult, CtxQuery, CtxResult, MessageToRuntime, MessageFromRuntime};
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct JsValue(SerdeJsValue);
@@ -102,4 +105,25 @@ impl LatticeImmutContext<JsMapping, JsMapping, JsMapping> for DynContext {
 pub struct JsLibrary {
     sender: Sender<MessageToRuntime>,
     receiver: Receiver<MessageFromRuntime>,
+    contexts: BTreeMap<CtxId, DynContext>,
+    ctx_count: CtxId,
+    join_handle: JoinHandle<Res<()>>,
+}
+
+impl JsLibrary {
+    pub fn new(script: String) -> Self {
+        let (from_runtime_sender, from_runtime_receiver) = channel();
+        let (to_runtime_sender, to_runtime_receiver) = channel();
+        let join_handle = spawn(move || {
+            let runtime_state = RuntimeState::new(script, from_runtime_sender, to_runtime_receiver);
+            block_on(runtime_state.process_messages())
+        });
+        Self {
+            sender: to_runtime_sender,
+            receiver: from_runtime_receiver,
+            contexts: BTreeMap::<CtxId, DynContext>::new(),
+            ctx_count: 0,
+            join_handle
+        }
+    }
 }

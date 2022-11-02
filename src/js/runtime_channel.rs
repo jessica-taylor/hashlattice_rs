@@ -2,7 +2,7 @@
 use std::ops::DerefMut;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
-use std::sync::mpsc::{channel, Sender, Receiver, TryRecvError};
+use std::sync::mpsc::{Sender, Receiver, TryRecvError};
 use std::rc::Rc;
 use core::cmp::Ordering;
 use core::pin::Pin;
@@ -157,7 +157,7 @@ pub struct RuntimeState {
 }
 
 impl RuntimeState {
-    pub fn new(script: String) -> (Self, Sender<MessageToRuntime>, Receiver<MessageFromRuntime>) {
+    pub fn new(script: String, sender: Sender<MessageFromRuntime>, receiver: Receiver<MessageToRuntime>) -> Self {
         let ext = Extension::builder()
             .ops(vec![
                 op_hash_lookup::decl(),
@@ -172,24 +172,22 @@ impl RuntimeState {
             extensions: vec![ext],
             ..Default::default()
         });
-        let (from_runtime_sender, from_runtime_receiver) = channel();
-        let (to_runtime_sender, to_runtime_receiver) = channel();
         let global_id = runtime.op_state().borrow_mut().resource_table.add(GlobalResource {
             query_state: Mutex::new(OutQueryState {
                 query_count: 0,
                 query_receivers: BTreeMap::new(),
             }),
-            sender: from_runtime_sender,
+            sender
         });
         runtime.execute_script("<globalid>", &format!("this.__globalid = {}", global_id)).unwrap();
         runtime.execute_script("<script>", &script).unwrap();
-        (Self {
+        Self {
             runtime: Arc::new(Mutex::new(runtime)),
             script,
-            receiver: Arc::new(to_runtime_receiver),
+            receiver: Arc::new(receiver),
             global_id,
             library_futures: Arc::new(Mutex::new(BTreeMap::<QueryId, Pin<Box<dyn Future<Output = Res<LibraryResult>>>>>::new())),
-        }, to_runtime_sender, from_runtime_receiver)
+        }
     }
     async fn call_function(runtime_arc: Arc<Mutex<JsRuntime>>, path: String, args: Vec<JsValue>) -> Result<JsValue, AnyError> {
         let mut runtime = runtime_arc.lock().unwrap();
@@ -277,10 +275,9 @@ impl RuntimeState {
         }
         Ok(is_pending)
     }
-    pub async fn process_messages(&mut self) -> Res<()> {
-        let self2 = self.clone();
+    pub async fn process_messages(self) -> Res<()> {
         poll_fn(move |ctx| {
-            match self2.poll_events_pending(ctx) {
+            match self.poll_events_pending(ctx) {
                 Ok(is_pending) => {
                     if is_pending {
                         Poll::Pending
