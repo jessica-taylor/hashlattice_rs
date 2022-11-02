@@ -52,17 +52,11 @@ impl<LK: Ord, LV, LCK: Ord, LCV> LatMerkleNodeDeps<LK, LV, LCK, LCV> {
     }
 }
 
-type LatMerkleNodeDepsM<L: TaggedMapping, LC: TaggedMapping> = LatMerkleNodeDeps<L::Key, L::Value, LC::Key, LC::Value>;
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct LatMerkleNode<LK: Ord, LV, LCK: Ord, LCV, V> {
     pub value: V,
     pub deps: LatMerkleNodeDeps<LK, LV, LCK, LCV>,
 }
-
-type LatMerkleNodeM<L: TaggedMapping, LC: TaggedMapping> = LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>;
-type LatComputationMerkleNodeM<L: TaggedMapping, LC: TaggedMapping> = LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, LC::Value>;
-
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum LatDBKey<CK, LK, LCK> {
@@ -72,8 +66,6 @@ pub enum LatDBKey<CK, LK, LCK> {
     LatComputation(LCK),
 }
 
-type LatDBKeyM<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> = LatDBKey<C::Key, L::Key, LC::Key>;
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum LatDBValue<CV, LK: Ord, LV, LCK: Ord, LCV> {
     Hash(Vec<u8>),
@@ -82,8 +74,6 @@ pub enum LatDBValue<CV, LK: Ord, LV, LCK: Ord, LCV> {
     LatComputation(Hash<LatMerkleNode<LK, LV, LCK, LCV, LCV>>),
 }
 
-type LatDBValueM<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> = LatDBValue<C::Value, L::Key, L::Value, LC::Key, LC::Value>;
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct LatDeps<CK: Ord, LK: Ord, LV, LCK: Ord, LCV> {
     hash_deps: BTreeSet<HashCode>,
@@ -91,8 +81,6 @@ pub struct LatDeps<CK: Ord, LK: Ord, LV, LCK: Ord, LCV> {
     lat_deps: BTreeMap<LK, Hash<LatMerkleNode<LK, LV, LCK, LCV, LV>>>,
     lat_comp_deps: BTreeMap<LCK, Hash<LatMerkleNode<LK, LV, LCK, LCV, LCV>>>,
 }
-
-type LatDepsM<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> = LatDeps<C::Key, L::Key, L::Value, LC::Key, LC::Value>;
 
 impl<CK: Ord, LK: Ord + Clone, LV, LCK: Ord + Clone, LCV> LatDeps<CK, LK, LV, LCK, LCV> {
     pub fn to_merkle_deps(&self) -> LatMerkleNodeDeps<LK, LV, LCK, LCV> {
@@ -137,15 +125,15 @@ pub struct LatDBMapping<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> {
 }
 
 impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> TaggedMapping for LatDBMapping<C, L, LC> {
-    type Key = LatDBKeyM<C, L, LC>;
-    type Value = LatDBValueM<C, L, LC>;
+    type Key = LatDBKey<C::Key, L::Key, LC::Key>;
+    type Value = LatDBValue<C::Value, L::Key, L::Value, LC::Key, LC::Value>;
 }
 
 pub struct LatStore<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> {
     db: Arc<Mutex<dyn DepDB<LatDBMapping<C, L, LC>>>>,
     comp_lib: Arc<dyn ComputationLibrary<C>>,
     lat_lib: Arc<dyn LatticeLibrary<C, L, LC>>,
-    deps_stack: Arc<Mutex<Vec<LatDepsM<C, L, LC>>>>,
+    deps_stack: Arc<Mutex<Vec<LatDeps<C::Key, L::Key, L::Value, LC::Key, LC::Value>>>>,
 }
 
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> Clone for LatStore<C, L, LC> {
@@ -407,7 +395,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 
 pub struct LatStoreImmutCtx<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> {
     store: Arc<LatStore<C, L, LC>>,
-    deps: Arc<LatMerkleNodeDepsM<L, LC>>,
+    deps: Arc<LatMerkleNodeDeps<L::Key, L::Value, LC::Key, LC::Value>>,
 }
 
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> Clone for LatStoreImmutCtx<C, L, LC> {
