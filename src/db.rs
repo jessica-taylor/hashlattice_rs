@@ -142,10 +142,21 @@ impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> TaggedMapping for La
 }
 
 pub struct LatStore<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> {
-    db: Box<Mutex<dyn DepDB<LatDBMapping<C, L, LC>>>>,
+    db: Arc<Mutex<dyn DepDB<LatDBMapping<C, L, LC>>>>,
     comp_lib: Arc<dyn ComputationLibrary<C>>,
     lat_lib: Arc<dyn LatticeLibrary<C, L, LC>>,
-    deps_stack: Mutex<Vec<LatDepsM<C, L, LC>>>,
+    deps_stack: Arc<Mutex<Vec<LatDepsM<C, L, LC>>>>,
+}
+
+impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> Clone for LatStore<C, L, LC> {
+    fn clone(&self) -> Self {
+        LatStore {
+            db: self.db.clone(),
+            comp_lib: self.comp_lib.clone(),
+            lat_lib: self.lat_lib.clone(),
+            deps_stack: self.deps_stack.clone(),
+        }
+    }
 }
 
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatStore<C, L, LC> {
@@ -153,10 +164,10 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                comp_lib: impl ComputationLibrary<C> + 'static,
                lat_lib: impl LatticeLibrary<C, L, LC> + 'static) -> Self {
         Self {
-            db: Box::new(Mutex::new(db)),
+            db: Arc::new(Mutex::new(db)),
             comp_lib: Arc::new(comp_lib),
             lat_lib: Arc::new(lat_lib),
-            deps_stack: Mutex::new(Vec::new()),
+            deps_stack: Arc::new(Mutex::new(Vec::new())),
         }
     }
 
@@ -177,24 +188,24 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         self.get_db().clear_dead()
     }
 
-    async fn with_get_deps<'a, T, F: Future<Output = Res<T>>>(self: &Arc<Self>, f: impl FnOnce(Arc<Self>) -> F) -> Res<(T, LatDeps<C::Key, L::Key, L::Value, LC::Key, LC::Value>)> {
+    async fn with_get_deps<'a, T, F: Future<Output = Res<T>>>(&self, f: impl FnOnce(Arc<Self>) -> F) -> Res<(T, LatDeps<C::Key, L::Key, L::Value, LC::Key, LC::Value>)> {
         self.deps_stack.lock().unwrap().push(LatDeps::new());
-        let res = f(self.clone()).await;
+        let res = f(Arc::new(self.clone())).await;
         let deps = self.deps_stack.lock().unwrap().pop().unwrap();
         res.map(|x| (x, deps))
     }
 
-    async fn hash_lookup_generic<T: DeserializeOwned>(self: &Arc<Self>, hsh: Hash<T>) -> Res<T> {
+    async fn hash_lookup_generic<T: DeserializeOwned>(&self, hsh: Hash<T>) -> Res<T> {
         let bs = self.clone().hash_lookup(hsh.code).await?;
         Ok(rmp_serde::from_slice(&bs)?)
     }
 
-    async fn hash_put_generic<T: Serialize>(self: &Arc<Self>, value: &T) -> Res<Hash<T>> {
+    async fn hash_put_generic<T: Serialize>(&self, value: &T) -> Res<Hash<T>> {
         let bs = rmp_serde::to_vec(&value)?;
         Ok(Hash::from_hashcode(self.clone().hash_put(bs).await?))
     }
 
-    async fn update_dirty(self: &Arc<Self>) -> Res<()> {
+    async fn update_dirty(&self) -> Res<()> {
         loop {
             let dirty = self.get_db().get_dirty()?;
             if dirty.is_empty() {
@@ -209,11 +220,11 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                         };
                         let merkle = self.hash_lookup_generic(merkle_hash).await?;
                         let old_ctx = Arc::new(LatStoreImmutCtx {
-                            store: self.clone(),
-                            deps: merkle.deps
+                            store: Arc::new(self.clone()),
+                            deps: Arc::new(merkle.deps)
                         });
-                        let tr_value = self.lat_lib.clone().transport(&lat_key, &merkle.value, old_ctx, self.clone()).await?;
-                        let bot = self.lat_lib.clone().bottom(&lat_key).await?;
+                        let tr_value = self.lat_lib.clone().transport(&lat_key, &merkle.value, old_ctx, Arc::new(self.clone())).await?;
+                        let bot = self.lat_lib.bottom(&lat_key).await?;
                         let tr_value2 = tr_value.clone();
                         let ((), tr_deps) = self.with_get_deps(move |this| async move {
                             this.lat_lib.clone().check_elem(&lat_key, &tr_value2, this).await
@@ -249,7 +260,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 #[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> HashLookup for LatStore<C, L, LC> {
 
-    async fn hash_lookup(self: Arc<Self>, hash: HashCode) -> Res<Vec<u8>> {
+    async fn hash_lookup(&self, hash: HashCode) -> Res<Vec<u8>> {
         if let Some(deps) = self.deps_stack.lock().unwrap().last_mut() {
             deps.hash_deps.insert(hash);
         }
@@ -264,7 +275,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 #[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> ComputationImmutContext<C> for LatStore<C, L, LC> {
 
-    async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
+    async fn eval_computation(&self, key: &C::Key) -> Res<C::Value> {
         if let Some(deps) = self.deps_stack.lock().unwrap().last_mut() {
             deps.comp_deps.insert(key.clone());
         }
@@ -285,7 +296,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 #[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> ComputationMutContext<C> for LatStore<C, L, LC> {
 
-    async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
+    async fn hash_put(&self, value: Vec<u8>) -> Res<HashCode> {
         let hash = hash_of_bytes(&value);
         let key = LatDBKey::Hash(hash);
         if !self.get_db().has_value(&key)? {
@@ -299,7 +310,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 #[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeImmutContext<C, L, LC> for LatStore<C, L, LC> {
 
-    async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<(L::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)> {
+    async fn lattice_lookup(&self, key: &L::Key) -> Res<(L::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)> {
         let db_value = self.get_db().get_value(&LatDBKey::Lattice(key.clone()))?;
         match db_value {
             Some(LatDBValue::Lattice(merkle_hash)) => {
@@ -308,22 +319,22 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                     deps.lat_deps.insert(key.clone(), hash(&merkle));
                 }
                 Ok((merkle.value, Arc::new(LatStoreImmutCtx {
-                    store: self,
-                    deps: merkle.deps
+                    store: Arc::new(self.clone()),
+                    deps: Arc::new(merkle.deps)
                 })))
             }
             None => {
                 let bot = self.lat_lib.clone().bottom(key).await?;
                 Ok((bot, Arc::new(LatStoreImmutCtx {
-                    store: self,
-                    deps: LatMerkleNodeDeps::new()
+                    store: Arc::new(self.clone()),
+                    deps: Arc::new(LatMerkleNodeDeps::new())
                 })))
             }
             _ => bail!("Lattice key has no lattice value"),
         }
     }
 
-    async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<(LC::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)> {
+    async fn eval_lat_computation(&self, key: &LC::Key) -> Res<(LC::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)> {
         let db_value = self.get_db().get_value(&LatDBKey::LatComputation(key.clone()))?;
         let merkle = match db_value {
             Some(LatDBValue::LatComputation(merkle_hash)) => self.hash_lookup_generic(merkle_hash).await?,
@@ -345,8 +356,8 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             deps.lat_comp_deps.insert(key.clone(), hash(&merkle));
         }
         Ok((merkle.value, Arc::new(LatStoreImmutCtx {
-            store: self,
-            deps: merkle.deps
+            store: Arc::new(self.clone()),
+            deps: Arc::new(merkle.deps)
         })))
     }
 }
@@ -354,8 +365,8 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 #[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeMutContext<C, L, LC> for LatStore<C, L, LC> {
 
-    async fn lattice_join(self: Arc<Self>, key: &L::Key, value: &L::Value, ctx_other: Arc<dyn LatticeImmutContext<C, L, LC>>) -> Res<L::Value> {
-        let value = self.lat_lib.clone().transport(key, value, ctx_other, self.clone()).await?;
+    async fn lattice_join(&self, key: &L::Key, value: &L::Value, ctx_other: Arc<dyn LatticeImmutContext<C, L, LC>>) -> Res<L::Value> {
+        let value = self.lat_lib.clone().transport(key, value, ctx_other, Arc::new(self.clone())).await?;
         let db_value = self.get_db().get_value(&LatDBKey::Lattice(key.clone()))?;
         let new_value = match db_value {
             None => value.clone(),
@@ -366,7 +377,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                     this.lat_lib.clone().check_elem(key, &old_merkle_value2, this).await
                 }).await?;
                 // assume it's already been transported??
-                let joined = self.lat_lib.clone().join(key, &old_merkle.value, &value, self.clone()).await?;
+                let joined = self.lat_lib.clone().join(key, &old_merkle.value, &value, Arc::new(self.clone())).await?;
                 if joined == old_merkle.value {
                     return Ok(old_merkle.value);
                 }
@@ -396,12 +407,21 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 
 pub struct LatStoreImmutCtx<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> {
     store: Arc<LatStore<C, L, LC>>,
-    deps: LatMerkleNodeDepsM<L, LC>,
+    deps: Arc<LatMerkleNodeDepsM<L, LC>>,
+}
+
+impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> Clone for LatStoreImmutCtx<C, L, LC> {
+    fn clone(&self) -> Self {
+        LatStoreImmutCtx {
+            store: self.store.clone(),
+            deps: self.deps.clone()
+        }
+    }
 }
 
 #[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> HashLookup for LatStoreImmutCtx<C, L, LC> {
-    async fn hash_lookup(self: Arc<Self>, hash: HashCode) -> Res<Vec<u8>> {
+    async fn hash_lookup(&self, hash: HashCode) -> Res<Vec<u8>> {
         self.store.clone().hash_lookup(hash).await
     }
 }
@@ -409,40 +429,40 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 #[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> ComputationImmutContext<C> for LatStoreImmutCtx<C, L, LC> {
 
-    async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
+    async fn eval_computation(&self, key: &C::Key) -> Res<C::Value> {
         self.store.clone().eval_computation(key).await
     }
 }
 
 #[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeImmutContext<C, L, LC> for LatStoreImmutCtx<C, L, LC> {
-    async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<(L::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)> {
+    async fn lattice_lookup(&self, key: &L::Key) -> Res<(L::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)> {
         match self.deps.lat_deps.get(key) {
             None => {
                 let bot = self.store.lat_lib.clone().bottom(key).await?;
                 Ok((bot, Arc::new(LatStoreImmutCtx {
                     store: self.store.clone(),
-                    deps: LatMerkleNodeDeps::new()
+                    deps: Arc::new(LatMerkleNodeDeps::new())
                 })))
             }
             Some(merkle_hash) => {
                 let merkle = self.store.hash_lookup_generic(merkle_hash.clone()).await?;
                 Ok((merkle.value, Arc::new(LatStoreImmutCtx {
                     store: self.store.clone(),
-                    deps: merkle.deps,
+                    deps: Arc::new(merkle.deps),
                 })))
             }
         }
     }
 
-    async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<(LC::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)> {
+    async fn eval_lat_computation(&self, key: &LC::Key) -> Res<(LC::Value, Arc<dyn LatticeImmutContext<C, L, LC>>)> {
         match self.deps.lat_comp_deps.get(key) {
             None => bail!("lattice computation dependency not found"),
             Some(merkle_hash) => {
                 let merkle = self.store.hash_lookup_generic(merkle_hash.clone()).await?;
                 Ok((merkle.value, Arc::new(LatStoreImmutCtx {
                     store: self.store.clone(),
-                    deps: merkle.deps,
+                    deps: Arc::new(merkle.deps),
                 })))
             }
         }
