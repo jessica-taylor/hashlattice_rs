@@ -67,14 +67,14 @@ pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct LatMerkleNodeDeps<LK: Ord, LV, LCK: Ord, LCV> {
+pub struct LatMerkleDeps<LK: Ord, LV, LCK: Ord, LCV> {
     pub lat_deps: BTreeMap<LK, Hash<LatMerkleNode<LK, LV, LCK, LCV, LV>>>,
     pub lat_comp_deps: BTreeMap<LCK, Hash<LatMerkleNode<LK, LV, LCK, LCV, LCV>>>,
 }
 
-impl<LK: Ord, LV, LCK: Ord, LCV> LatMerkleNodeDeps<LK, LV, LCK, LCV> {
+impl<LK: Ord, LV, LCK: Ord, LCV> LatMerkleDeps<LK, LV, LCK, LCV> {
     pub fn new() -> Self {
-        LatMerkleNodeDeps {
+        LatMerkleDeps {
             lat_deps: BTreeMap::new(),
             lat_comp_deps: BTreeMap::new(),
         }
@@ -87,7 +87,7 @@ impl<LK: Ord, LV, LCK: Ord, LCV> LatMerkleNodeDeps<LK, LV, LCK, LCV> {
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct LatMerkleNode<LK: Ord, LV, LCK: Ord, LCV, V> {
     pub value: V,
-    pub deps: LatMerkleNodeDeps<LK, LV, LCK, LCV>,
+    pub deps: LatMerkleDeps<LK, LV, LCK, LCV>,
 }
 
 
