@@ -42,10 +42,22 @@ impl TaggedMapping for JsMapping {
     type Value = JsValue;
 }
 
+#[derive(Clone)]
 enum DynContext {
     ComputationImmut(Arc<dyn ComputationImmutContext<JsMapping>>),
     LatticeImmut(Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>>),
     LatticeMut(Arc<dyn LatticeMutContext<JsMapping, JsMapping, JsMapping>>),
+}
+
+impl DynContext {
+    fn ptr_eq(&self, other: &DynContext) -> bool {
+        match (self, other) {
+            (DynContext::ComputationImmut(a), DynContext::ComputationImmut(b)) => Arc::ptr_eq(a, b),
+            (DynContext::LatticeImmut(a), DynContext::LatticeImmut(b)) => Arc::ptr_eq(a, b),
+            (DynContext::LatticeMut(a), DynContext::LatticeMut(b)) => Arc::ptr_eq(a, b),
+            _ => false,
+        }
+    }
 }
 
 #[async_trait]
@@ -103,10 +115,11 @@ impl LatticeImmutContext<JsMapping, JsMapping, JsMapping> for DynContext {
 
 
 pub struct JsLibrary {
-    sender: Sender<MessageToRuntime>,
-    receiver: Receiver<MessageFromRuntime>,
-    contexts: BTreeMap<CtxId, DynContext>,
-    ctx_count: CtxId,
+    sender: Mutex<Sender<MessageToRuntime>>,
+    receiver: Mutex<Receiver<MessageFromRuntime>>,
+    contexts_by_id: Mutex<BTreeMap<CtxId, DynContext>>,
+    ids_by_context: Mutex<Vec<(DynContext, CtxId)>>,
+    ctx_count: Mutex<CtxId>,
     join_handle: JoinHandle<Res<()>>,
 }
 
@@ -119,11 +132,35 @@ impl JsLibrary {
             block_on(runtime_state.process_messages())
         });
         Self {
-            sender: to_runtime_sender,
-            receiver: from_runtime_receiver,
-            contexts: BTreeMap::<CtxId, DynContext>::new(),
-            ctx_count: 0,
+            sender: Mutex::new(to_runtime_sender),
+            receiver: Mutex::new(from_runtime_receiver),
+            contexts_by_id: Mutex::new(BTreeMap::<CtxId, DynContext>::new()),
+            ids_by_context: Mutex::new(Vec::new()),
+            ctx_count: Mutex::new(0),
             join_handle
         }
+    }
+    fn get_ctx_id(&self, immut: &DynContext) -> CtxId {
+        let mut ids = self.ids_by_context.lock().unwrap();
+        for (ptr, id) in &*ids {
+            if ptr.ptr_eq(immut) {
+                return *id;
+            }
+        }
+        let mut ctx_count = self.ctx_count.lock().unwrap();
+        let id = *ctx_count;
+        *ctx_count += 1;
+        ids.push((immut.clone(), id));
+        self.contexts_by_id.lock().unwrap().insert(id, immut.clone());
+        id
+    }
+}
+
+#[async_trait]
+impl ComputationLibrary<JsMapping> for JsLibrary {
+    async fn eval_computation(&self, key: &JsValue, ctx: Arc<dyn ComputationImmutContext<JsMapping>>) -> Res<JsValue> {
+        let dyn_ctx = DynContext::ComputationImmut(ctx);
+        let ctxid = self.get_ctx_id(&dyn_ctx);
+        bail!("Not implemented");
     }
 }
