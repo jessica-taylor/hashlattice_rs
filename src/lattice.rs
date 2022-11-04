@@ -92,6 +92,27 @@ impl<LK: Ord, LV, LCK: Ord, LCV> LatMerkleDeps<LK, LV, LCK, LCV> {
     pub fn is_empty(&self) -> bool {
         self.lat_deps.is_empty() && self.lat_comp_deps.is_empty()
     }
+    pub fn try_union(&mut self, other: Self) -> Res<()> {
+        for (k, v) in other.lat_deps {
+            if let Some(v2) = self.lat_deps.get(&k) {
+                if v != *v2 {
+                    bail!("lat_deps conflict")
+                }
+            } else {
+                self.lat_deps.insert(k, v);
+            }
+        }
+        for (k, v) in other.lat_comp_deps {
+            if let Some(v2) = self.lat_comp_deps.get(&k) {
+                if v != *v2 {
+                    bail!("lat_comp_deps conflict")
+                }
+            } else {
+                self.lat_comp_deps.insert(k, v);
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
