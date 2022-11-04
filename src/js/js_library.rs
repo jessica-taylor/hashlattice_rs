@@ -180,10 +180,9 @@ impl JsLibrary {
     fn send_message(&self, msg: MessageToRuntime) -> Res<()> {
         let sender = self.sender.lock().unwrap();
         if let Some(sender) = &*sender {
-            Ok(sender.send(msg)?)
-        } else {
-            bail!("Library is closed")
+            sender.send(msg)?;
         }
+        Ok(())
     }
     async fn do_query(&self, query: LibraryQuery) -> Res<LibraryResult> {
         let (query_sender, query_receiver) = oneshot::channel();
