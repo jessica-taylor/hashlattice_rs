@@ -904,6 +904,7 @@ dependencies = [
  "rmp-serde",
  "rsa",
  "serde",
+ "serde_json",
  "sha2 0.10.6",
  "signature",
  "sqlite",

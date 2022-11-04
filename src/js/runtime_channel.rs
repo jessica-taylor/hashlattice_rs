@@ -48,8 +48,8 @@ pub enum LibraryResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CtxQuery {
     HashLookup(Hash<JsValue>),
-    EvalComputation(JsValue),
     HashPut(JsValue),
+    EvalComputation(JsValue),
     LatticeLookup(JsValue),
     EvalLatComputation(JsValue),
 }
@@ -57,9 +57,9 @@ pub enum CtxQuery {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CtxResult {
     HashLookup(JsValue),
-    EvalComputation(JsValue),
     HashPut(Hash<JsValue>),
-    LatticeLookup(JsValue),
+    EvalComputation(JsValue),
+    LatticeLookup(Option<JsValue>),
     EvalLatComputation(JsValue),
 }
 
@@ -131,7 +131,10 @@ async fn op_eval_computation(state: &mut OpState, globalid: u32, ctxid: CtxId, k
 #[op]
 async fn op_lattice_lookup(state: &mut OpState, globalid: u32, ctxid: CtxId, key: JsValue) -> Result<JsValue, AnyError> {
     if let CtxResult::LatticeLookup(value) = op_query(state, globalid, ctxid, CtxQuery::LatticeLookup(key)).await? {
-        Ok(value)
+        Ok(match value {
+            None => JsValue::Null,
+            Some(v) => JsValue::Array(vec![v])
+        })
     } else {
         bail!("Lattice lookup returned wrong result type")
     }

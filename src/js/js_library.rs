@@ -1,12 +1,16 @@
 use core::cmp::Ordering;
+use core::pin::Pin;
+use core::task::Poll;
 use std::sync::{Arc, Mutex};
 use std::rc::Rc;
 use std::sync::mpsc::{Sender, Receiver, channel, TryRecvError};
 use std::collections::BTreeMap;
 use std::thread::{spawn, JoinHandle};
 
+use futures::Future;
 use futures::channel::oneshot;
 use futures::executor::block_on;
+use futures::future::{FutureExt, poll_fn};
 use async_trait::async_trait;
 use anyhow::bail;
 use serde::{Serialize, Deserialize};
@@ -17,7 +21,7 @@ use deno_core::serde_json::{Value as SerdeJsValue, to_string as json_to_string};
 use crate::error::Res;
 use crate::tagged_mapping::TaggedMapping;
 use crate::crypto::{Hash, HashCode, hash};
-use crate::lattice::{HashLookup, ComputationImmutContext, HashPut, ComputationLibrary, LatticeLibrary, LatticeImmutContext, LatticeMutContext, LatMerkleNode};
+use crate::lattice::{HashLookup, ComputationImmutContext, HashPut, ComputationLibrary, LatticeLibrary, LatticeImmutContext, LatticeMutContext, LatMerkleNode, hash_lookup_generic, hash_put_generic};
 use crate::js::runtime_channel::{RuntimeState, CtxId, QueryId, LibraryQuery, LibraryResult, CtxQuery, CtxResult, MessageToRuntime, MessageFromRuntime};
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -128,6 +132,7 @@ pub struct JsLibrary {
     ctx_count: Mutex<CtxId>,
     join_handle: JoinHandle<Res<()>>,
     query_state: Mutex<OutQueryState>,
+    ctx_futures: Mutex<BTreeMap<QueryId, Pin<Box<dyn Send + Future<Output = Res<CtxResult>>>>>>,
 }
 
 impl JsLibrary {
@@ -148,6 +153,7 @@ impl JsLibrary {
                 query_count: 0,
                 query_receivers: BTreeMap::new(),
             }),
+            ctx_futures: Mutex::new(BTreeMap::<QueryId, Pin<Box<dyn Send + Future<Output = Res<CtxResult>>>>>::new()),
             join_handle
         }
     }
@@ -176,6 +182,66 @@ impl JsLibrary {
         };
         self.sender.lock().unwrap().send(MessageToRuntime::LibraryQuery(query_id, query)).unwrap();
         query_receiver.await.unwrap()
+    }
+    pub async fn process_messages(self: Arc<Self>) -> Res<()> {
+        poll_fn(move |_| {
+            let msg = self.receiver.lock().unwrap().try_recv();
+            match msg {
+                Err(TryRecvError::Empty) => {
+                    return Poll::Pending;
+                },
+                Err(TryRecvError::Disconnected) => {
+                    return Poll::Ready(Ok(()));
+                },
+                Ok(MessageFromRuntime::LibraryResult(query_id, result)) => {
+                    let mut query_state = self.query_state.lock().unwrap();
+                    let query_sender = query_state.query_receivers.remove(&query_id).unwrap();
+                    query_sender.send(result).unwrap();
+                },
+                Ok(MessageFromRuntime::CtxQuery(query_id, ctx_id, query)) => {
+                    let ctx = Arc::new(self.contexts_by_id.lock().unwrap().get(&ctx_id).unwrap().clone());
+                    let fut: Pin<Box<dyn Send + Future<Output = Res<CtxResult>>>> = match query {
+                        CtxQuery::HashLookup(hash) => {
+                            Box::pin(async move {
+                                Ok(CtxResult::HashLookup(hash_lookup_generic(&ctx, hash).await?))
+                            })
+
+                        }
+                        CtxQuery::HashPut(value) => {
+                            Box::pin(async move {
+                                Ok(CtxResult::HashPut(hash_put_generic(&ctx, &value).await?))
+                            })
+                        },
+                        CtxQuery::EvalComputation(key) => {
+                            Box::pin(async move {
+                                Ok(CtxResult::EvalComputation(ctx.eval_computation(&JsValue(key)).await?.0))
+                            })
+                        },
+                        CtxQuery::LatticeLookup(key) => {
+                            Box::pin(async move { 
+                                let opt_merkle_hash = ctx.clone().lattice_lookup(&JsValue(key)).await?;
+                                match opt_merkle_hash {
+                                    None => Ok(CtxResult::LatticeLookup(None)),
+                                    Some(merkle_hash) => Ok(CtxResult::LatticeLookup(Some(hash_lookup_generic(&ctx, merkle_hash).await?.value.0)))
+                                }
+                                    
+                                    // None => Ok(SerdeJsValue::Null),
+                                    // Some(merkle_hash) => Ok(SerdeJsValue::Array(vec![hash_lookup_generic(&ctx, merkle_hash).await?.value.0]))
+                            })
+                        },
+                        CtxQuery::EvalLatComputation(key) => {
+                            Box::pin(async move { 
+                                let merkle_hash = ctx.clone().eval_lat_computation(&JsValue(key)).await?;
+                                Ok(CtxResult::EvalLatComputation(hash_lookup_generic(&ctx, merkle_hash).await?.value.0))
+                            })
+                        },
+                    };
+                    self.ctx_futures.lock().unwrap().insert(query_id, Box::pin(fut));
+                    // self.sender.lock().unwrap().send(MessageToRuntime::CtxResult(ctx_id, result)).unwrap();
+                },
+            }
+            Poll::Pending
+        }).await
     }
 }
 
