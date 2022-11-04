@@ -40,8 +40,8 @@ pub enum LibraryQuery {
 pub enum LibraryResult {
     EvalComputation(JsValue),
     CheckElem,
-    Join(JsValue),
-    Transport(JsValue),
+    Join(Option<JsValue>),
+    Transport(Option<JsValue>),
     EvalLatComputation(JsValue),
 }
 
@@ -143,6 +143,20 @@ async fn op_eval_lat_computation(state: &mut OpState, globalid: u32, ctxid: CtxI
         Ok(value)
     } else {
         bail!("Eval lat computation returned wrong result type")
+    }
+}
+
+fn js_to_option(value: JsValue) -> Res<Option<JsValue>> {
+    match value {
+        JsValue::Null => Ok(None),
+        JsValue::Array(arr) => {
+            if arr.len() == 1 {
+                Ok(Some(arr[0].clone())) // TODO: why is this clone necessary??
+            } else {
+                bail!("Array length is not 1")
+            }
+        }
+        _ => bail!("Expected null or array")
     }
 }
 
@@ -254,10 +268,10 @@ impl RuntimeState {
                                 self.register_call_function(query_id, "hash_put", vec![key, value, JsValue::from(ctxid)], |_| Ok(LibraryResult::CheckElem));
                             },
                             LibraryQuery::Join(key, value1, value2, ctxid) => {
-                                self.register_call_function(query_id, "lattice_join", vec![key, value1, value2, JsValue::from(ctxid)], |res| Ok(LibraryResult::Join(res)));
+                                self.register_call_function(query_id, "lattice_join", vec![key, value1, value2, JsValue::from(ctxid)], |res| Ok(LibraryResult::Join(js_to_option(res)?)));
                             },
                             LibraryQuery::Transport(key, value, old_ctxid, new_ctxid) => {
-                                self.register_call_function(query_id, "transport", vec![key, value, JsValue::from(old_ctxid), JsValue::from(new_ctxid)], |res| Ok(LibraryResult::Transport(res)));
+                                self.register_call_function(query_id, "transport", vec![key, value, JsValue::from(old_ctxid), JsValue::from(new_ctxid)], |res| Ok(LibraryResult::Transport(js_to_option(res)?)));
                             },
                             LibraryQuery::EvalLatComputation(key, ctxid) => {
                                 self.register_call_function(query_id, "eval_lat_computation", vec![key, JsValue::from(ctxid)], |res| Ok(LibraryResult::EvalLatComputation(res)));

@@ -179,6 +179,8 @@ impl JsLibrary {
     }
 }
 
+
+
 #[async_trait]
 impl ComputationLibrary<JsMapping> for JsLibrary {
     async fn eval_computation(self: Arc<Self>, key: &JsValue, ctx: Arc<dyn ComputationImmutContext<JsMapping>>) -> Res<JsValue> {
@@ -188,6 +190,51 @@ impl ComputationLibrary<JsMapping> for JsLibrary {
             Ok(JsValue(result))
         } else {
             bail!("Unexpected result from eval_computation")
+        }
+    }
+}
+
+#[async_trait]
+impl LatticeLibrary<JsMapping, JsMapping, JsMapping> for JsLibrary {
+    async fn check_elem(self: Arc<Self>, key: &JsValue, value: &JsValue, ctx: Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>>) -> Res<()> {
+        let dyn_ctx = DynContext::LatticeImmut(ctx);
+        let ctxid = self.get_ctx_id(&dyn_ctx);
+        if let LibraryResult::CheckElem = self.do_query(LibraryQuery::CheckElem(key.0.clone(), value.0.clone(), ctxid)).await? {
+            Ok(())
+        } else {
+            bail!("Unexpected result from check_elem")
+        }
+    }
+
+    async fn join(self: Arc<Self>, key: &JsValue, a: &JsValue, b: &JsValue, ctx: Arc<dyn LatticeMutContext<JsMapping, JsMapping, JsMapping>>) -> Res<Option<JsValue>> {
+        let dyn_ctx = DynContext::LatticeMut(ctx);
+        let ctxid = self.get_ctx_id(&dyn_ctx);
+        if let LibraryResult::Join(result) = self.do_query(LibraryQuery::Join(key.0.clone(), a.0.clone(), b.0.clone(), ctxid)).await? {
+            Ok(result.map(JsValue))
+        } else {
+            bail!("Unexpected result from join")
+        }
+    }
+
+    async fn transport(self: Arc<Self>, key: &JsValue, value: &JsValue, old_ctx: Arc<dyn LatticeImmutContext<JsMapping, JsMapping, JsMapping>>, new_ctx: Arc<dyn LatticeMutContext<JsMapping, JsMapping, JsMapping>>) -> Res<Option<JsValue>> {
+        let dyn_old_ctx = DynContext::LatticeImmut(old_ctx);
+        let dyn_new_ctx = DynContext::LatticeMut(new_ctx);
+        let old_ctxid = self.get_ctx_id(&dyn_old_ctx);
+        let new_ctxid = self.get_ctx_id(&dyn_new_ctx);
+        if let LibraryResult::Transport(result) = self.do_query(LibraryQuery::Transport(key.0.clone(), value.0.clone(), old_ctxid, new_ctxid)).await? {
+            Ok(result.map(JsValue))
+        } else {
+            bail!("Unexpected result from transport")
+        }
+    }
+
+    async fn eval_lat_computation(self: Arc<Self>, key: &JsValue, ctx: Arc<dyn LatticeMutContext<JsMapping, JsMapping, JsMapping>>) -> Res<JsValue> {
+        let dyn_ctx = DynContext::LatticeMut(ctx);
+        let ctxid = self.get_ctx_id(&dyn_ctx);
+        if let LibraryResult::EvalLatComputation(result) = self.do_query(LibraryQuery::EvalLatComputation(key.0.clone(), ctxid)).await? {
+            Ok(JsValue(result))
+        } else {
+            bail!("Unexpected result from eval_lat_computation")
         }
     }
 }
