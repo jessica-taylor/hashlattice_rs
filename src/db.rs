@@ -179,6 +179,7 @@ pub struct LatStore<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> {
     comp_lib: Arc<dyn ComputationLibrary<C>>,
     lat_lib: Arc<dyn LatticeLibrary<C, L, LC>>,
     extra_hashlookup: Arc<dyn HashLookup>,
+    extra_hashlookup_cache: Arc<Mutex<BTreeMap<HashCode, Vec<u8>>>>,
 }
 
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> Clone for LatStore<C, L, LC> {
@@ -188,6 +189,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             comp_lib: self.comp_lib.clone(),
             lat_lib: self.lat_lib.clone(),
             extra_hashlookup: self.extra_hashlookup.clone(),
+            extra_hashlookup_cache: self.extra_hashlookup_cache.clone(),
         }
     }
 }
@@ -202,6 +204,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             comp_lib: Arc::new(comp_lib),
             lat_lib: Arc::new(lat_lib),
             extra_hashlookup: Arc::new(extra_hashlookup),
+            extra_hashlookup_cache: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }
 
@@ -281,13 +284,19 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> HashLookup for LatStore<C, L, LC> {
 
     async fn hash_lookup(self: Arc<Self>, hash: HashCode) -> Res<Vec<u8>> {
-        // TODO: cache?
+        {
+            let cache = self.extra_hashlookup_cache.lock().unwrap();
+            if let Some(value) = cache.get(&hash) {
+                return Ok(value.clone());
+            }
+        }
         let res = self.get_db().get_value(&LatDBKey::Hash(hash))?;
         match res {
             Some(LatDBValue::Hash(bytes)) => Ok(bytes),
             _ => {
                 let other_bs = self.extra_hashlookup.clone().hash_lookup(hash).await?;
                 if hash_of_bytes(&other_bs) == hash {
+                    self.extra_hashlookup_cache.lock().unwrap().insert(hash, other_bs.clone());
                     Ok(other_bs)
                 } else {
                     bail!("hash lookup failed")
