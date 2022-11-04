@@ -519,7 +519,6 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
     }
 
     async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, LC::Value>>> {
-        // TODO: track redundant paths to same key, invalidate if other uses different ones?
         let store_dep = if self.use_store_lattices {
             Some(self.store.clone().eval_lat_computation(key).await?)
         } else {
@@ -529,11 +528,10 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         if store_dep.is_some() && store_dep == other_dep {
             return Ok(store_dep.unwrap());
         }
-        let other_deps = match other_dep {
-            None => LatMerkleDeps::new(),
-            Some(other_dep) => hash_lookup_generic(&self.other_hashlookup, other_dep).await?.deps
-        };
-        self.other_deps.lock().unwrap().try_union(other_deps)?;
+        if let Some(other_dep) = other_dep {
+            let other_deps = hash_lookup_generic(&self.other_hashlookup, other_dep).await?.deps;
+            self.other_deps.lock().unwrap().try_union(other_deps)?;
+        }
         let lat_lib = self.store.lat_lib.clone();
         let (value, deps) = LatDepsTracker::<C, L, LC, _>::with_get_deps(&self, move |this| async move {
             lat_lib.eval_lat_computation(&key, this).await
