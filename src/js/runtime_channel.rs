@@ -244,8 +244,7 @@ impl RuntimeState {
             for (query_id, mut fut) in library_futures.iter_mut() {
                 match Pin::new(fut.deref_mut()).poll(ctx) {
                     Poll::Ready(res) => {
-                        let global = self.runtime.lock().unwrap().op_state().borrow_mut().resource_table.get::<GlobalResource>(self.global_id).unwrap();
-                        global.sender.send(MessageFromRuntime::LibraryResult(*query_id, res))?;
+                        self.sender.send(MessageFromRuntime::LibraryResult(*query_id, res))?;
                         to_remove.push(*query_id);
                     }
                     Poll::Pending => {
