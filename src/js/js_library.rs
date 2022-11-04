@@ -5,6 +5,7 @@ use std::sync::mpsc::{Sender, Receiver, channel, TryRecvError};
 use std::collections::BTreeMap;
 use std::thread::{spawn, JoinHandle};
 
+use futures::channel::oneshot;
 use futures::executor::block_on;
 use async_trait::async_trait;
 use anyhow::bail;
@@ -114,6 +115,10 @@ impl LatticeImmutContext<JsMapping, JsMapping, JsMapping> for DynContext {
      }
 }
 
+struct OutQueryState {
+    query_count: QueryId,
+    query_receivers: BTreeMap<QueryId, oneshot::Sender<Res<LibraryResult>>>,
+}
 
 pub struct JsLibrary {
     sender: Mutex<Sender<MessageToRuntime>>,
@@ -122,6 +127,7 @@ pub struct JsLibrary {
     ids_by_context: Mutex<Vec<(DynContext, CtxId)>>,
     ctx_count: Mutex<CtxId>,
     join_handle: JoinHandle<Res<()>>,
+    query_state: Mutex<OutQueryState>,
 }
 
 impl JsLibrary {
@@ -138,6 +144,10 @@ impl JsLibrary {
             contexts_by_id: Mutex::new(BTreeMap::<CtxId, DynContext>::new()),
             ids_by_context: Mutex::new(Vec::new()),
             ctx_count: Mutex::new(0),
+            query_state: Mutex::new(OutQueryState {
+                query_count: 0,
+                query_receivers: BTreeMap::new(),
+            }),
             join_handle
         }
     }
@@ -155,6 +165,18 @@ impl JsLibrary {
         self.contexts_by_id.lock().unwrap().insert(id, immut.clone());
         id
     }
+    async fn do_query(&self, query: LibraryQuery) -> Res<LibraryResult> {
+        let (query_sender, query_receiver) = oneshot::channel();
+        let query_id = {
+            let mut query_state = self.query_state.lock().unwrap();
+            let query_id = query_state.query_count;
+            query_state.query_count += 1;
+            query_state.query_receivers.insert(query_id, query_sender);
+            query_id
+        };
+        self.sender.lock().unwrap().send(MessageToRuntime::LibraryQuery(query_id, query)).unwrap();
+        query_receiver.await.unwrap()
+    }
 }
 
 #[async_trait]
@@ -162,6 +184,10 @@ impl ComputationLibrary<JsMapping> for JsLibrary {
     async fn eval_computation(self: Arc<Self>, key: &JsValue, ctx: Arc<dyn ComputationImmutContext<JsMapping>>) -> Res<JsValue> {
         let dyn_ctx = DynContext::ComputationImmut(ctx);
         let ctxid = self.get_ctx_id(&dyn_ctx);
-        bail!("Not implemented");
+        if let LibraryResult::EvalComputation(result) = self.do_query(LibraryQuery::EvalComputation(key.0.clone(), ctxid)).await? {
+            Ok(JsValue(result))
+        } else {
+            bail!("Unexpected result from eval_computation")
+        }
     }
 }
