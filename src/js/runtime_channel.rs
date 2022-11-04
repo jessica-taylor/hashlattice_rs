@@ -149,9 +149,9 @@ async fn op_eval_lat_computation(state: &mut OpState, globalid: u32, ctxid: CtxI
 fn js_to_option(value: JsValue) -> Res<Option<JsValue>> {
     match value {
         JsValue::Null => Ok(None),
-        JsValue::Array(arr) => {
+        JsValue::Array(mut arr) => {
             if arr.len() == 1 {
-                Ok(Some(arr[0].clone())) // TODO: why is this clone necessary??
+                Ok(Some(arr.remove(0)))
             } else {
                 bail!("Array length is not 1")
             }
