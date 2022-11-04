@@ -80,7 +80,7 @@ struct OutQueryState {
 
 struct GlobalResource {
     query_state: Mutex<OutQueryState>,
-    sender: Sender<MessageFromRuntime>,
+    sender: Arc<Sender<MessageFromRuntime>>,
 }
 
 impl Resource for GlobalResource {}
@@ -169,12 +169,14 @@ pub struct RuntimeState {
     runtime: Arc<Mutex<JsRuntime>>,
     script: String,
     global_id: u32,
+    sender: Arc<Sender<MessageFromRuntime>>,
     receiver: Arc<Receiver<MessageToRuntime>>,
     library_futures: Arc<Mutex<BTreeMap<QueryId, Pin<Box<dyn Future<Output = Res<LibraryResult>>>>>>>,
 }
 
 impl RuntimeState {
     pub fn new(script: String, sender: Sender<MessageFromRuntime>, receiver: Receiver<MessageToRuntime>) -> Self {
+        let sender = Arc::new(sender);
         let ext = Extension::builder()
             .ops(vec![
                 op_hash_lookup::decl(),
@@ -194,13 +196,14 @@ impl RuntimeState {
                 query_count: 0,
                 query_receivers: BTreeMap::new(),
             }),
-            sender
+            sender: sender.clone()
         });
         runtime.execute_script("<globalid>", &format!("this.__globalid = {}", global_id)).unwrap();
         runtime.execute_script("<script>", &script).unwrap();
         Self {
             runtime: Arc::new(Mutex::new(runtime)),
             script,
+            sender: sender,
             receiver: Arc::new(receiver),
             global_id,
             library_futures: Arc::new(Mutex::new(BTreeMap::<QueryId, Pin<Box<dyn Future<Output = Res<LibraryResult>>>>>::new())),

@@ -126,7 +126,7 @@ struct OutQueryState {
 }
 
 pub struct JsLibrary {
-    sender: Mutex<Sender<MessageToRuntime>>,
+    sender: Mutex<Option<Sender<MessageToRuntime>>>,
     receiver: Mutex<Receiver<MessageFromRuntime>>,
     contexts_by_id: Mutex<BTreeMap<CtxId, DynContext>>,
     ids_by_context: Mutex<Vec<(DynContext, CtxId)>>,
@@ -145,7 +145,7 @@ impl JsLibrary {
             block_on(runtime_state.process_messages())
         });
         Self {
-            sender: Mutex::new(to_runtime_sender),
+            sender: Mutex::new(Some(to_runtime_sender)),
             receiver: Mutex::new(from_runtime_receiver),
             contexts_by_id: Mutex::new(BTreeMap::<CtxId, DynContext>::new()),
             ids_by_context: Mutex::new(Vec::new()),
@@ -157,6 +157,11 @@ impl JsLibrary {
             ctx_futures: Mutex::new(BTreeMap::<QueryId, Pin<Box<dyn Send + Future<Output = Res<CtxResult>>>>>::new()),
             join_handle
         }
+    }
+    pub fn close(&self) -> Res<()> {
+        *self.sender.lock().unwrap() = None;
+        // self.join_handle.join().unwrap()
+        Ok(())
     }
     fn get_ctx_id(&self, immut: &DynContext) -> CtxId {
         let mut ids = self.ids_by_context.lock().unwrap();
@@ -172,6 +177,14 @@ impl JsLibrary {
         self.contexts_by_id.lock().unwrap().insert(id, immut.clone());
         id
     }
+    fn send_message(&self, msg: MessageToRuntime) -> Res<()> {
+        let sender = self.sender.lock().unwrap();
+        if let Some(sender) = &*sender {
+            Ok(sender.send(msg)?)
+        } else {
+            bail!("Library is closed")
+        }
+    }
     async fn do_query(&self, query: LibraryQuery) -> Res<LibraryResult> {
         let (query_sender, query_receiver) = oneshot::channel();
         let query_id = {
@@ -181,7 +194,7 @@ impl JsLibrary {
             query_state.query_receivers.insert(query_id, query_sender);
             query_id
         };
-        self.sender.lock().unwrap().send(MessageToRuntime::LibraryQuery(query_id, query)).unwrap();
+        self.send_message(MessageToRuntime::LibraryQuery(query_id, query))?;
         query_receiver.await.unwrap()
     }
     fn poll_events_pending(self: &Arc<Self>, ctx: &mut Context<'_>) -> Res<bool> {
@@ -192,7 +205,7 @@ impl JsLibrary {
             for (query_id, mut fut) in ctx_futures.iter_mut() {
                 match Pin::new(fut.deref_mut()).poll(ctx) {
                     Poll::Ready(res) => {
-                        self.sender.lock().unwrap().send(MessageToRuntime::CtxResult(*query_id, res))?;
+                        self.send_message(MessageToRuntime::CtxResult(*query_id, res))?;
                         to_remove.push(*query_id);
                     }
                     Poll::Pending => {
@@ -271,7 +284,6 @@ impl JsLibrary {
         }).await
     }
 }
-
 
 
 #[async_trait]
