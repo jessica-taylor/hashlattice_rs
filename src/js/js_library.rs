@@ -62,33 +62,33 @@ impl DynContext {
 
 #[async_trait]
 impl HashLookup for DynContext {
-    async fn hash_lookup(&self, hash: HashCode) -> Res<Vec<u8>> {
-         match self {
-             DynContext::ComputationImmut(ctx) => ctx.hash_lookup(hash).await,
-             DynContext::LatticeImmut(ctx) => ctx.hash_lookup(hash).await,
-             DynContext::LatticeMut(ctx) => ctx.hash_lookup(hash).await,
+    async fn hash_lookup(self: Arc<Self>, hash: HashCode) -> Res<Vec<u8>> {
+         match &*self {
+             DynContext::ComputationImmut(ctx) => ctx.clone().hash_lookup(hash).await,
+             DynContext::LatticeImmut(ctx) => ctx.clone().hash_lookup(hash).await,
+             DynContext::LatticeMut(ctx) => ctx.clone().hash_lookup(hash).await,
          }
      }
 }
 
 #[async_trait]
 impl ComputationImmutContext<JsMapping> for DynContext {
-     async fn eval_computation(&self, key: &JsValue) -> Res<JsValue> {
-         match self {
-             DynContext::ComputationImmut(ctx) => ctx.eval_computation(key).await,
-             DynContext::LatticeImmut(ctx) => ctx.eval_computation(key).await,
-             DynContext::LatticeMut(ctx) => ctx.eval_computation(key).await,
+     async fn eval_computation(self: Arc<Self>, key: &JsValue) -> Res<JsValue> {
+         match &*self {
+             DynContext::ComputationImmut(ctx) => ctx.clone().eval_computation(key).await,
+             DynContext::LatticeImmut(ctx) => ctx.clone().eval_computation(key).await,
+             DynContext::LatticeMut(ctx) => ctx.clone().eval_computation(key).await,
          }
      }
 }
 
 #[async_trait]
 impl ComputationMutContext<JsMapping> for DynContext {
-     async fn hash_put(&self, value: Vec<u8>) -> Res<HashCode> {
-         match self {
+     async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
+         match &*self {
              DynContext::ComputationImmut(ctx) => bail!("Cannot hash_put in ComputationImmutContext"),
              DynContext::LatticeImmut(ctx) => bail!("Cannot hash_put in LatticeImmutContext"),
-             DynContext::LatticeMut(ctx) => ctx.hash_put(value).await,
+             DynContext::LatticeMut(ctx) => ctx.clone().hash_put(value).await,
          }
      }
 }
@@ -96,19 +96,19 @@ impl ComputationMutContext<JsMapping> for DynContext {
 
 #[async_trait]
 impl LatticeImmutContext<JsMapping, JsMapping, JsMapping> for DynContext {
-     async fn lattice_lookup(&self, key: &JsValue) -> Res<Option<Hash<LatMerkleNode<JsValue, JsValue, JsValue, JsValue, JsValue>>>> {
-         match self {
+     async fn lattice_lookup(self: Arc<Self>, key: &JsValue) -> Res<Option<Hash<LatMerkleNode<JsValue, JsValue, JsValue, JsValue, JsValue>>>> {
+         match &*self {
              DynContext::ComputationImmut(ctx) => bail!("Cannot lattice_lookup in ComputationImmutContext"),
-             DynContext::LatticeImmut(ctx) => ctx.lattice_lookup(key).await,
-             DynContext::LatticeMut(ctx) => ctx.lattice_lookup(key).await,
+             DynContext::LatticeImmut(ctx) => ctx.clone().lattice_lookup(key).await,
+             DynContext::LatticeMut(ctx) => ctx.clone().lattice_lookup(key).await,
          }
      }
  
-     async fn eval_lat_computation(&self, key: &JsValue) -> Res<Hash<LatMerkleNode<JsValue, JsValue, JsValue, JsValue, JsValue>>> {
-         match self {
+     async fn eval_lat_computation(self: Arc<Self>, key: &JsValue) -> Res<Hash<LatMerkleNode<JsValue, JsValue, JsValue, JsValue, JsValue>>> {
+         match &*self {
              DynContext::ComputationImmut(ctx) => bail!("Cannot eval_lat_computation in ComputationImmutContext"),
-             DynContext::LatticeImmut(ctx) => ctx.eval_lat_computation(key).await,
-             DynContext::LatticeMut(ctx) => ctx.eval_lat_computation(key).await,
+             DynContext::LatticeImmut(ctx) => ctx.clone().eval_lat_computation(key).await,
+             DynContext::LatticeMut(ctx) => ctx.clone().eval_lat_computation(key).await,
          }
      }
 }
@@ -158,7 +158,7 @@ impl JsLibrary {
 
 #[async_trait]
 impl ComputationLibrary<JsMapping> for JsLibrary {
-    async fn eval_computation(&self, key: &JsValue, ctx: Arc<dyn ComputationImmutContext<JsMapping>>) -> Res<JsValue> {
+    async fn eval_computation(self: Arc<Self>, key: &JsValue, ctx: Arc<dyn ComputationImmutContext<JsMapping>>) -> Res<JsValue> {
         let dyn_ctx = DynContext::ComputationImmut(ctx);
         let ctxid = self.get_ctx_id(&dyn_ctx);
         bail!("Not implemented");
