@@ -108,7 +108,7 @@ impl LatticeImmutContext<JsMapping, JsMapping, JsMapping> for DynContext {
      async fn eval_lat_computation(self: Arc<Self>, key: &JsValue) -> Res<Hash<LatMerkleNode<JsValue, JsValue, JsValue, JsValue, JsValue>>> {
          match &*self {
              DynContext::ComputationImmut(ctx) => bail!("Cannot eval_lat_computation in ComputationImmutContext"),
-             DynContext::LatticeImmut(ctx) => ctx.clone().eval_lat_computation(key).await,
+             DynContext::LatticeImmut(ctx) => bail!("Cannot eval_lat_computation in LatticeimmutContext"),
              DynContext::LatticeMut(ctx) => ctx.clone().eval_lat_computation(key).await,
          }
      }

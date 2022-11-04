@@ -72,7 +72,7 @@ pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static,
         Ok(Some(value.clone()))
     }
 
-    async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key, ctx: Arc<dyn LatticeImmutContext<C, L, LC>>) -> Res<LC::Value> {
+    async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key, ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<LC::Value> {
         bail!("eval_lat_computation not implemented")
     }
 }

@@ -137,12 +137,23 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 }
 
 #[async_trait]
+impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static, Ctx: HashPut> HashPut for LatDepsTracker<C, L, LC, Ctx> {
+    async fn hash_put(self: Arc<Self>, data: Vec<u8>) -> Res<HashCode> {
+        let hash = self.ctx.clone().hash_put(data).await?;
+        self.deps.lock().unwrap().hash_deps.insert(hash.clone());
+        Ok(hash)
+    }
+}
+
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static, Ctx: ComputationImmutContext<C>> ComputationImmutContext<C> for LatDepsTracker<C, L, LC, Ctx> {
     async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
         self.deps.lock().unwrap().comp_deps.insert(key.clone());
         self.ctx.clone().eval_computation(key).await
     }
 }
+
+impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static, Ctx: LatticeMutContext<C, L, LC> + 'static> LatticeMutContext<C, L, LC> for LatDepsTracker<C, L, LC, Ctx> {}
 
 #[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static, Ctx: LatticeImmutContext<C, L, LC>> LatticeImmutContext<C, L, LC> for LatDepsTracker<C, L, LC, Ctx> {

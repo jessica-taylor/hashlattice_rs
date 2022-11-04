@@ -251,7 +251,7 @@ impl RuntimeState {
                                 self.register_call_function(query_id, "eval_computation", vec![key, JsValue::from(ctxid)], |res| Ok(LibraryResult::EvalComputation(res)));
                             },
                             LibraryQuery::CheckElem(key, value, ctxid) => {
-                                self.register_call_function(query_id, "hash_put", vec![key, value, JsValue::from(ctxid)], |res| Ok(LibraryResult::CheckElem));
+                                self.register_call_function(query_id, "hash_put", vec![key, value, JsValue::from(ctxid)], |_| Ok(LibraryResult::CheckElem));
                             },
                             LibraryQuery::Join(key, value1, value2, ctxid) => {
                                 self.register_call_function(query_id, "lattice_join", vec![key, value1, value2, JsValue::from(ctxid)], |res| Ok(LibraryResult::Join(res)));
