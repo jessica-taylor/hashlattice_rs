@@ -135,9 +135,9 @@ pub trait AsLatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMa
     fn as_lattice_immut_ctx(self: Arc<Self>) -> Arc<dyn LatticeImmutContext<C, L, LC>>;
 }
 
-impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping, T: 'static + Clone + LatticeImmutContext<C, L, LC>> AsLatticeImmutContext<C, L, LC> for T {
+impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping, T: 'static + LatticeImmutContext<C, L, LC>> AsLatticeImmutContext<C, L, LC> for T {
     fn as_lattice_immut_ctx(self: Arc<Self>) -> Arc<dyn LatticeImmutContext<C, L, LC>> {
-        Arc::new((*self).clone())
+        self
     }
 }
 
