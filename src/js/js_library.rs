@@ -16,7 +16,7 @@ use deno_core::serde_json::{Value as SerdeJsValue, to_string as json_to_string};
 use crate::error::Res;
 use crate::tagged_mapping::TaggedMapping;
 use crate::crypto::{Hash, HashCode, hash};
-use crate::lattice::{HashLookup, ComputationImmutContext, ComputationMutContext, ComputationLibrary, LatticeLibrary, LatticeImmutContext, LatticeMutContext, LatMerkleNode};
+use crate::lattice::{HashLookup, ComputationImmutContext, HashPut, ComputationLibrary, LatticeLibrary, LatticeImmutContext, LatticeMutContext, LatMerkleNode};
 use crate::js::runtime_channel::{RuntimeState, CtxId, QueryId, LibraryQuery, LibraryResult, CtxQuery, CtxResult, MessageToRuntime, MessageFromRuntime};
 
 #[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -72,23 +72,24 @@ impl HashLookup for DynContext {
 }
 
 #[async_trait]
+impl HashPut for DynContext {
+     async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
+         match &*self {
+             DynContext::ComputationImmut(ctx) => bail!("Cannot hash_put in ComputationImmutContext"),
+             DynContext::LatticeImmut(ctx) => bail!("Cannot hash_put in LatticeImmutContext"),
+             DynContext::LatticeMut(ctx) => ctx.clone().hash_put(value).await,
+         }
+     }
+}
+
+
+#[async_trait]
 impl ComputationImmutContext<JsMapping> for DynContext {
      async fn eval_computation(self: Arc<Self>, key: &JsValue) -> Res<JsValue> {
          match &*self {
              DynContext::ComputationImmut(ctx) => ctx.clone().eval_computation(key).await,
              DynContext::LatticeImmut(ctx) => ctx.clone().eval_computation(key).await,
              DynContext::LatticeMut(ctx) => ctx.clone().eval_computation(key).await,
-         }
-     }
-}
-
-#[async_trait]
-impl ComputationMutContext<JsMapping> for DynContext {
-     async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
-         match &*self {
-             DynContext::ComputationImmut(ctx) => bail!("Cannot hash_put in ComputationImmutContext"),
-             DynContext::LatticeImmut(ctx) => bail!("Cannot hash_put in LatticeImmutContext"),
-             DynContext::LatticeMut(ctx) => ctx.clone().hash_put(value).await,
          }
      }
 }

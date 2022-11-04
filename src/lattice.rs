@@ -25,6 +25,20 @@ pub async fn hash_lookup_generic<H: HashLookup + ?Sized, T: DeserializeOwned>(hl
     Ok(rmp_serde::from_slice(&bs)?)
 }
 
+pub async fn hash_put_generic<H: HashPut + ?Sized, T: Serialize>(hp: &Arc<H>, value: &T) -> Res<Hash<T>> {
+    let bs = rmp_serde::to_vec(value)?;
+    Ok(Hash::from_hashcode(hp.clone().hash_put(bs).await?))
+}
+
+#[async_trait]
+pub trait HashPut : HashLookup + Send + Sync {
+
+    async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
+        bail!("hash_put not implemented")
+    }
+
+}
+
 #[async_trait]
 pub trait ComputationImmutContext<C: TaggedMapping> : HashLookup + Send + Sync {
 
@@ -33,19 +47,6 @@ pub trait ComputationImmutContext<C: TaggedMapping> : HashLookup + Send + Sync {
     }
 }
 
-#[async_trait]
-pub trait ComputationMutContext<C: TaggedMapping> : ComputationImmutContext<C> + Send + Sync {
-
-    async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
-        bail!("hash_put not implemented")
-    }
-
-}
-
-pub async fn hash_put_generic<C: TaggedMapping, H: ComputationMutContext<C> + ?Sized, T: Serialize>(hp: &Arc<H>, value: &T) -> Res<Hash<T>> {
-    let bs = rmp_serde::to_vec(value)?;
-    Ok(Hash::from_hashcode(hp.clone().hash_put(bs).await?))
-}
 
 #[async_trait]
 pub trait ComputationLibrary<C: TaggedMapping + 'static> : Send + Sync {
@@ -142,7 +143,7 @@ impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping, T: 'static + Lattice
 }
 
 #[async_trait]
-pub trait LatticeMutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping>: ComputationMutContext<C> + LatticeImmutContext<C, L, LC> + AsLatticeImmutContext<C, L, LC> {
+pub trait LatticeMutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping>: HashPut + LatticeImmutContext<C, L, LC> + AsLatticeImmutContext<C, L, LC> {
 
 }
 
@@ -168,16 +169,16 @@ impl HashLookup for EmptyContext {
 }
 
 #[async_trait]
-impl<C: TaggedMapping + 'static> ComputationImmutContext<C> for EmptyContext {
-    async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
-        bail!("EmptyComputationImmutContext: no computation for {:?}", key)
+impl HashPut for EmptyContext {
+    async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
+        bail!("EmptyComputationMutContext: no hash put for {:?}", value)
     }
 }
 
 #[async_trait]
-impl<C: TaggedMapping + 'static> ComputationMutContext<C> for EmptyContext {
-    async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
-        bail!("EmptyComputationMutContext: no hash put for {:?}", value)
+impl<C: TaggedMapping + 'static> ComputationImmutContext<C> for EmptyContext {
+    async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
+        bail!("EmptyComputationImmutContext: no computation for {:?}", key)
     }
 }
 

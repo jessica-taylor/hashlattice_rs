@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use crate::error::Res;
 use crate::crypto::{HashCode, hash_of_bytes, Hash, hash};
 use crate::tagged_mapping::TaggedMapping;
-use crate::lattice::{HashLookup, hash_lookup_generic, hash_put_generic, LatticeLibrary, ComputationLibrary, ComputationImmutContext, ComputationMutContext, LatticeImmutContext, LatticeMutContext, LatMerkleDeps, LatMerkleNode, EmptyContext};
+use crate::lattice::{HashLookup, hash_lookup_generic, hash_put_generic, LatticeLibrary, ComputationLibrary, ComputationImmutContext, HashPut, LatticeImmutContext, LatticeMutContext, LatMerkleDeps, LatMerkleNode, EmptyContext};
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
 /// a key-value store with key-key dependencies; auto-removes unpinned, non-depended-on keys
@@ -273,6 +273,21 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 }
 
 #[async_trait]
+impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> HashPut for LatStore<C, L, LC> {
+
+    async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
+        let hash = hash_of_bytes(&value);
+        let key = LatDBKey::Hash(hash);
+        if !self.get_db().has_value(&key)? {
+            self.get_db().set_value_deps(key.clone(), LatDBValue::Hash(value), Vec::new())?;
+        }
+        Ok(hash)
+    }
+
+}
+
+
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> ComputationImmutContext<C> for LatStore<C, L, LC> {
 
     async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
@@ -287,20 +302,6 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         }).await?;
         self.get_db().set_value_deps(computation_key, LatDBValue::Computation(value.clone()), deps.to_keys())?;
         Ok(value)
-    }
-
-}
-
-#[async_trait]
-impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> ComputationMutContext<C> for LatStore<C, L, LC> {
-
-    async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
-        let hash = hash_of_bytes(&value);
-        let key = LatDBKey::Hash(hash);
-        if !self.get_db().has_value(&key)? {
-            self.get_db().set_value_deps(key.clone(), LatDBValue::Hash(value), Vec::new())?;
-        }
-        Ok(hash)
     }
 
 }
@@ -421,6 +422,13 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 }
 
 #[async_trait]
+impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> HashPut for LatStoreJoinedCtx<C, L, LC> {
+    async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
+        self.store.clone().hash_put(value).await
+    }
+}
+
+#[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> ComputationImmutContext<C> for LatStoreJoinedCtx<C, L, LC> {
     async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
         let computation_key = LatDBKey::Computation(key.clone());
@@ -434,13 +442,6 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         }).await?;
         self.store.get_db().set_value_deps(computation_key, LatDBValue::Computation(value.clone()), deps.to_keys())?;
         Ok(value)
-    }
-}
-
-#[async_trait]
-impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> ComputationMutContext<C> for LatStoreJoinedCtx<C, L, LC> {
-    async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
-        self.store.clone().hash_put(value).await
     }
 }
 

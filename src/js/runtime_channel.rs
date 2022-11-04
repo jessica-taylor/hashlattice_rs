@@ -22,7 +22,7 @@ use deno_core::serde_json::{Value as JsValue, to_string as json_to_string};
 use crate::error::Res;
 use crate::tagged_mapping::TaggedMapping;
 use crate::crypto::{Hash, HashCode, hash};
-use crate::lattice::{HashLookup, ComputationImmutContext, ComputationMutContext, ComputationLibrary, LatticeLibrary, LatticeImmutContext, LatticeMutContext};
+use crate::lattice::{HashLookup, ComputationImmutContext, HashPut, ComputationLibrary, LatticeLibrary, LatticeImmutContext, LatticeMutContext};
 
 pub type QueryId = usize;
 pub type CtxId = usize;
