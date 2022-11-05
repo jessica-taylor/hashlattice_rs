@@ -186,18 +186,6 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 }
             }
         }
-        {
-            {
-                let mut stmt = self.conn.prepare("INSERT INTO key_value (key, value, pinned, live, dirty) VALUES (:key, :value, :pinned, false, false)")?
-                    .bind_by_name(":key", &*key)?
-                    .bind_by_name(":value", &*value)?
-                    .bind_by_name(":pinned", already_pinned as i64)?;
-                if stmt.next()? != State::Done {
-                    bail!("Failed to insert value");
-                }
-            }
-            self.set_live_raw(&key)?;
-        }
         for dep in deps {
             if !old_deps.contains(&dep) {
                 {
@@ -210,6 +198,18 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 }
                 self.set_live_raw(&dep)?;
             }
+        }
+        {
+            {
+                let mut stmt = self.conn.prepare("INSERT INTO key_value (key, value, pinned, live, dirty) VALUES (:key, :value, :pinned, false, false)")?
+                    .bind_by_name(":key", &*key)?
+                    .bind_by_name(":value", &*value)?
+                    .bind_by_name(":pinned", already_pinned as i64)?;
+                if stmt.next()? != State::Done {
+                    bail!("Failed to insert value");
+                }
+            }
+            self.set_live_raw(&key)?;
         }
         Ok(())
     }
