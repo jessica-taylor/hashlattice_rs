@@ -57,10 +57,25 @@ impl<M: TaggedMapping> SqlDepDB<M> {
     }
 
     fn set_dependents_dirty_raw(&mut self, key: &[u8]) -> Res<()> {
-        let mut stmt = self.conn.prepare("UPDATE key_value SET dirty = true WHERE key IN (SELECT key FROM key_dep WHERE dep = :key)")?
-            .bind_by_name(":key", key)?;
-        if stmt.next()? != State::Done {
-            bail!("set_dependents_dirty: unexpected result");
+        let deps = {
+            let mut stmt = self.conn.prepare("SELECT dep FROM key_dep WHERE key = :key")?
+                .bind_by_name(":key", &*key)?;
+            let mut old_deps = BTreeSet::new();
+            while stmt.next()? != State::Done {
+                let dep = stmt.read::<Vec<u8>>(0)?;
+                old_deps.insert(dep);
+            }
+            old_deps
+        };
+        {
+            let mut stmt = self.conn.prepare("UPDATE key_value SET dirty = true WHERE key IN (SELECT key FROM key_dep WHERE dep = :key)")?
+                .bind_by_name(":key", key)?;
+            if stmt.next()? != State::Done {
+                bail!("set_dependents_dirty: unexpected result");
+            }
+        }
+        for dep in deps {
+            self.set_dependents_dirty_raw(&dep)?;
         }
         Ok(())
     }
@@ -87,6 +102,16 @@ impl<M: TaggedMapping> SqlDepDB<M> {
         }
         Ok(())
     }
+    fn is_dirty_raw(&self, key: &[u8]) -> Res<bool> {
+        let mut stmt = self.conn.prepare("SELECT dirty FROM key_value WHERE key = :key")?
+            .bind_by_name(":key", key)?;
+        if stmt.next()? == State::Row {
+            Ok(stmt.read::<i64>(0)? != 0)
+        } else {
+            bail!("Key not found");
+        }
+    }
+
 }
 
 impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
@@ -233,13 +258,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
 
     fn is_dirty(&self, key: &M::Key) -> Res<bool> {
         let key = rmp_serde::to_vec(key)?;
-        let mut stmt = self.conn.prepare("SELECT dirty FROM key_value WHERE key = :key")?
-            .bind_by_name(":key", &*key)?;
-        if stmt.next()? == State::Row {
-            Ok(stmt.read::<i64>(0)? != 0)
-        } else {
-            bail!("Key not found");
-        }
+        self.is_dirty_raw(&key)
     }
 
     fn get_dirty(&mut self) -> Res<Vec<M::Key>> {
