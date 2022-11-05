@@ -156,6 +156,16 @@ impl TaggedMapping for LatticeLookupMapping {
     type Value = Hash<Option<LatMerkleNode<Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>>>>;
 }
 
+fn send_mutex_oneshot<T>(sender: &Mutex<Option<oneshot::Sender<T>>>, value: T) -> Res<()> {
+    let mut sender = sender.lock().unwrap();
+    if let Some(sender) = sender.take() {
+        sender.send(value).map_err(|_| format!("failed to send oneshot")).unwrap();
+    } else {
+        bail!("Sender already sent");
+    }
+    Ok(())
+}
+
 
 // what's the API?
 // we should have:
@@ -266,28 +276,15 @@ impl PeerConnection {
                 println!("Got data channel '{}':'{}'.", channel.label(), channel.id());
                 let label = channel.label();
                 if label == "hash_lookup" {
-                    let mut chan = hl_remote_channel_sender.lock().unwrap();
-                    if let Some(s) = mem::replace(chan.deref_mut(), None) {
-                        s.send(channel).map_err(|_| format!("failed to send channel")).unwrap();
-                    }
-
+                    send_mutex_oneshot(&*hl_remote_channel_sender, channel).unwrap();
                 } else if label == "hash_lookup_result" {
-                    let mut chan = hl_remote_result_channel_sender.lock().unwrap();
-                    if let Some(s) = mem::replace(chan.deref_mut(), None) {
-                        s.send(channel).map_err(|_| format!("failed to send channel")).unwrap();
-                    }
+                    send_mutex_oneshot(&*hl_remote_result_channel_sender, channel).unwrap();
                 } else if label == "lattice_lookup" {
-                    let mut chan = ll_remote_channel_sender.lock().unwrap();
-                    if let Some(s) = mem::replace(chan.deref_mut(), None) {
-                        s.send(channel).map_err(|_| format!("failed to send channel")).unwrap();
-                    }
+                    send_mutex_oneshot(&*ll_remote_channel_sender, channel).unwrap();
                 } else if label == "lattice_lookup_result" {
-                    let mut chan = ll_remote_result_channel_sender.lock().unwrap();
-                    if let Some(s) = mem::replace(chan.deref_mut(), None) {
-                        s.send(channel).map_err(|_| format!("failed to send channel")).unwrap();
-                    }
+                    send_mutex_oneshot(&*ll_remote_result_channel_sender, channel).unwrap();
                 } else {
-                    println!("unknown channel label");
+                    println!("unknown channel label {}", label);
                     // TODO panic?
                 }
             })
