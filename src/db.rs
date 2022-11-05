@@ -471,7 +471,7 @@ pub struct LatStoreDepsCtx<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping
     store: Arc<LatStore<C, L, LC>>,
     other_deps: Arc<Mutex<LatMerkleDeps<L::Key, L::Value, LC::Key, LC::Value>>>,
     lat_cache: Arc<Mutex<BTreeMap<L::Key, Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>>>>,
-    lat_comp_cache: Arc<Mutex<BTreeMap<LC::Key, Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, LC::Value>>>>>>,
+    lat_comp_cache: Arc<Mutex<BTreeMap<LC::Key, Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, LC::Value>>>>>,
 }
 
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatStoreDepsCtx<C, L, LC> {
@@ -529,10 +529,20 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         {
             let cache = self.lat_comp_cache.lock().unwrap();
             if let Some(res) = cache.get(key) {
-                return Ok(res.clone().unwrap());
+                return Ok(res.clone());
             }
         }
         let other_merkle_hash = self.other_deps.lock().unwrap().lat_comp_deps.get(key).cloned();
+        {
+            let db_key = LatDBKey::LatComputation(key.clone());
+            let db_value = self.store.get_db().get_value(&db_key)?;
+            if let Some(LatDBValue::LatComputation(store_merkle_hash)) = db_value {
+                if !self.store.get_db().is_dirty(&db_key)? && Some(store_merkle_hash) == other_merkle_hash {
+                    self.lat_comp_cache.lock().unwrap().insert(key.clone(), store_merkle_hash);
+                    return Ok(store_merkle_hash);
+                }
+            }
+        }
         if other_merkle_hash.is_none() {
             bail!("lattice computation used unexpected dependency");
         }
@@ -545,7 +555,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         let merkle = LatMerkleNode {value, deps: deps.to_merkle_deps()};
         let merkle_hash = hash_put_generic(&self.store, &merkle).await?;
         // merkle_hash can differ from other_merkle_hash due to store containing extra hashes!
-        self.lat_comp_cache.lock().unwrap().insert(key.clone(), Some(merkle_hash));
+        self.lat_comp_cache.lock().unwrap().insert(key.clone(), merkle_hash);
         Ok(merkle_hash)
     }
 }
