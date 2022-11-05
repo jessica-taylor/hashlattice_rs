@@ -46,7 +46,16 @@ struct DataChannel<T> {
 }
 
 impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> DataChannel<T> {
-    fn new(channel: Arc<RTCDataChannel>) -> Self {
+    async fn new(channel: Arc<RTCDataChannel>) -> Self {
+
+        channel.on_error(Box::new(|err| Box::pin(async move {
+            println!("Got data channel error: {:?}", err);
+        }))).await;
+
+        channel.on_close(Box::new(|| Box::pin(async move {
+            println!("Got data channel close.");
+        }))).await;
+
         Self {
             channel,
             _phantom: std::marker::PhantomData,
@@ -303,19 +312,12 @@ impl PeerConnection {
                     // TODO panic?
                 }
             })
-            // })).await;
-            // channel.on_error(Box::new(|err| Box::pin(async move {
-            //     println!("Got data channel error: {:?}", err);
-            // }))).await;
-            // channel.on_close(Box::new(|| Box::pin(async move {
-            //     println!("Got data channel close.");
-            // }))).await;
         })).await;
 
-        let hl_remote_channel = DataChannel::new(hl_remote_channel_receiver.await.unwrap());
-        let hl_remote_result_channel = DataChannel::new(hl_remote_result_channel_receiver.await.unwrap());
-        let ll_remote_channel = DataChannel::new(ll_remote_channel_receiver.await.unwrap());
-        let ll_remote_result_channel = DataChannel::new(ll_remote_result_channel_receiver.await.unwrap());
+        let hl_remote_channel = DataChannel::new(hl_remote_channel_receiver.await.unwrap()).await;
+        let hl_remote_result_channel = DataChannel::new(hl_remote_result_channel_receiver.await.unwrap()).await;
+        let ll_remote_channel = DataChannel::new(ll_remote_channel_receiver.await.unwrap()).await;
+        let ll_remote_result_channel = DataChannel::new(ll_remote_result_channel_receiver.await.unwrap()).await;
 
         let accessible_context = self.accessible_context.clone();
 
@@ -332,7 +334,7 @@ impl PeerConnection {
     }
     async fn create_data_channel<T: Serialize + DeserializeOwned + Send + Sync + 'static>(&mut self, label: &str) -> Res<DataChannel<T>> {
         let channel = self.rtc_connection.create_data_channel(label, None).await?;
-        Ok(DataChannel::new(channel))
+        Ok(DataChannel::new(channel).await)
     }
 }
 
