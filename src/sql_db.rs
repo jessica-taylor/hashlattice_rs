@@ -59,13 +59,11 @@ impl<M: TaggedMapping> SqlDepDB<M> {
     fn set_dependents_dirty_raw(&mut self, key: &[u8]) -> Res<()> {
         let mut non_dirty_deps = BTreeSet::new();
         {
-            let mut stmt = self.conn.prepare("SELECT dep FROM key_dep WHERE key = :key")?
+            let mut stmt = self.conn.prepare("SELECT dep FROM key_dep WHERE key = :key AND dirty = true")?
                 .bind_by_name(":key", &*key)?;
             while stmt.next()? != State::Done {
                 let dep = stmt.read::<Vec<u8>>(0)?;
-                if !self.is_dirty_raw(&dep)? {
-                    non_dirty_deps.insert(dep);
-                }
+                non_dirty_deps.insert(dep);
             }
         };
         for dep in non_dirty_deps {
