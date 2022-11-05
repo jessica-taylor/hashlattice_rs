@@ -321,15 +321,19 @@ impl PeerConnection {
 
         let accessible_context = self.accessible_context.clone();
 
-        hl_sender.send(QueryChannel::new(hl_local_channel, hl_remote_channel, hl_local_result_channel, hl_remote_result_channel, move |hashcode| Box::pin(
+        let hl_channel = QueryChannel::new(hl_local_channel, hl_remote_channel, hl_local_result_channel, hl_remote_result_channel, move |hashcode| Box::pin(
             accessible_context.clone().hash_lookup(hashcode)
-        )).await).map_err(|_| format!("failed to send channel")).unwrap();
+        )).await;
+
+        hl_sender.send(hl_channel).map_err(|_| format!("failed to send channel")).unwrap();
 
         let accessible_context = self.accessible_context.clone();
 
-        ll_sender.send(QueryChannel::new(ll_local_channel, ll_remote_channel, ll_local_result_channel, ll_remote_result_channel, move |key: Vec<u8>| Box::pin(
+        let ll_channel = QueryChannel::new(ll_local_channel, ll_remote_channel, ll_local_result_channel, ll_remote_result_channel, move |key: Vec<u8>| Box::pin(
             accessible_context.clone().lattice_lookup(key)
-        )).await).map_err(|_| format!("failed to send channel")).unwrap();
+        )).await;
+
+        ll_sender.send(ll_channel).map_err(|_| format!("failed to send channel")).unwrap();
         Ok(())
     }
     async fn create_data_channel<T: Serialize + DeserializeOwned + Send + Sync + 'static>(&mut self, label: &str) -> Res<DataChannel<T>> {
