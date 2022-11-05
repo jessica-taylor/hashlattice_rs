@@ -227,6 +227,36 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         self.get_db().clear_dead()
     }
 
+    async fn transport_dirty_lat(self: &Arc<Self>, key: &L::Key) -> Res<()> {
+        let db_key = LatDBKey::Lattice(key.clone());
+        let merkle_hash = match self.get_db().get_value(&db_key)? {
+            Some(LatDBValue::Lattice(merkle_hash)) => merkle_hash,
+            _ => bail!("Lattice key {:?} has no merkle hash", key),
+        };
+        let merkle = hash_lookup_generic(&self, merkle_hash).await?;
+        let old_ctx = Arc::new(LatStoreDepsCtx::new(self.clone(), merkle.deps));
+        let opt_tr_value = self.lat_lib.clone().transport(&key, &merkle.value, old_ctx, self.clone()).await?;
+        match opt_tr_value {
+            None => {
+                self.get_db().clear_value_deps(&db_key)?;
+            }
+            Some(tr_value) => {
+                let tr_value2 = tr_value.clone();
+                let lat_lib = self.lat_lib.clone();
+                let ((), tr_deps) = LatDepsTracker::with_get_deps(self, move |this| async move {
+                    lat_lib.check_elem(&key, &tr_value2, this).await
+                }).await?;
+                let merkle_deps = tr_deps.to_merkle_deps();
+                let merkle_hash = hash_put_generic(self, &LatMerkleNode {
+                    value: tr_value,
+                    deps: tr_deps.to_merkle_deps(),
+                }).await?;
+                self.get_db().set_value_deps(db_key, LatDBValue::Lattice(merkle_hash), tr_deps.to_keys())?;
+            }
+        }
+        Ok(())
+    }
+
     async fn update_dirty(self: Arc<Self>) -> Res<()> {
         loop {
             let dirty = self.get_db().get_dirty()?;
@@ -236,31 +266,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             for key in dirty {
                 match &key {
                     LatDBKey::Lattice(lat_key) => {
-                        let merkle_hash = match self.get_db().get_value(&key)? {
-                            Some(LatDBValue::Lattice(merkle_hash)) => merkle_hash,
-                            _ => bail!("Lattice key {:?} has no merkle hash", lat_key),
-                        };
-                        let merkle = hash_lookup_generic(&self, merkle_hash).await?;
-                        let old_ctx = Arc::new(LatStoreDepsCtx::new(self.clone(), merkle.deps));
-                        let opt_tr_value = self.lat_lib.clone().transport(&lat_key, &merkle.value, old_ctx, self.clone()).await?;
-                        match opt_tr_value {
-                            None => {
-                                self.get_db().clear_value_deps(&key)?;
-                            }
-                            Some(tr_value) => {
-                                let tr_value2 = tr_value.clone();
-                                let lat_lib = self.lat_lib.clone();
-                                let ((), tr_deps) = LatDepsTracker::with_get_deps(&self, move |this| async move {
-                                    lat_lib.check_elem(&lat_key, &tr_value2, this).await
-                                }).await?;
-                                let merkle_deps = tr_deps.to_merkle_deps();
-                                let merkle_hash = hash_put_generic(&self, &LatMerkleNode {
-                                    value: tr_value,
-                                    deps: tr_deps.to_merkle_deps(),
-                                }).await?;
-                                self.get_db().set_value_deps(key.clone(), LatDBValue::Lattice(merkle_hash), tr_deps.to_keys())?;
-                            }
-                        }
+                        self.transport_dirty_lat(lat_key).await?;
                     }
                     LatDBKey::LatComputation(lat_comp_key) => {
                         self.get_db().clear_value_deps(&key)?;
