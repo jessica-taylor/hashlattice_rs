@@ -158,6 +158,11 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
             old_deps
         };
         if same_value && old_deps == deps {
+            let mut stmt = self.conn.prepare("UPDATE key_value SET dirty = false WHERE key = :key")?
+                .bind_by_name(":key", &*key)?;
+            if stmt.next()? != State::Done {
+                bail!("set_value_deps: unexpected result");
+            }
             return Ok(());
         }
         if !same_value {
