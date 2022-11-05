@@ -107,12 +107,12 @@ struct QueryChannel<M: TaggedMapping> {
 }
 
 impl<M: TaggedMapping + 'static> QueryChannel<M> {
-    fn new(query_channel: DataChannel<(QueryId, M::Key)>,
+    async fn new(query_channel: DataChannel<(QueryId, M::Key)>,
            result_channel: DataChannel<(QueryId, Result<M::Value, String>)>,
            remote_query_channel: DataChannel<(QueryId, M::Key)>,
            remote_result_channel: DataChannel<(QueryId, Result<M::Value, String>)>,
-           query_handler: impl 'static + Send + Sync + Fn(M::Key) -> Pin<Box<dyn Send + Future<Output = Res<M::Value>>>>) -> Self {
-        Self {
+           query_handler: impl 'static + Send + Sync + Fn(M::Key) -> Pin<Box<dyn Send + Future<Output = Res<M::Value>>>>) -> Arc<Self> {
+        let this = Arc::new(Self {
             query_state: Mutex::new(QueryState {
                 query_count: 0,
                 query_receivers: BTreeMap::new(),
@@ -122,7 +122,17 @@ impl<M: TaggedMapping + 'static> QueryChannel<M> {
             remote_query_channel,
             remote_result_channel,
             query_handler: Box::new(query_handler),
-        }
+        });
+        let this2 = this.clone();
+        this.remote_query_channel.on_receive(Box::new(move |(query_id, key)| {
+            let this = this2.clone();
+            Box::pin(async move {
+                let value = (this.query_handler)(key).await;
+                this.remote_result_channel.send(&(query_id, to_string_result(value))).await?;
+                Ok(())
+            })
+        })).await.unwrap();
+        this
     }
     async fn send_result(&self, qid: QueryId, value: Res<M::Value>) -> Res<()> {
         self.result_channel.send(&(qid, to_string_result(value))).await
@@ -181,8 +191,8 @@ struct PeerConnection {
     accessible_context: Arc<dyn RemoteAccessibleContext>,
     signal_client: Arc<dyn RTCSignalClient>,
     rtc_connection: Arc<RTCPeerConnection>,
-    hash_lookup_channel: oneshot::Receiver<QueryChannel<HashLookupMapping>>,
-    lattice_lookup_channel: oneshot::Receiver<QueryChannel<LatticeLookupMapping>>,
+    hash_lookup_channel: oneshot::Receiver<Arc<QueryChannel<HashLookupMapping>>>,
+    lattice_lookup_channel: oneshot::Receiver<Arc<QueryChannel<LatticeLookupMapping>>>,
 }
 
 impl PeerConnection {
@@ -210,7 +220,7 @@ impl PeerConnection {
         Ok(res)
     }
 
-    async fn initialize(&mut self, hl_sender: oneshot::Sender<QueryChannel<HashLookupMapping>>, ll_sender: oneshot::Sender<QueryChannel<LatticeLookupMapping>>) -> Res<()> {
+    async fn initialize(&mut self, hl_sender: oneshot::Sender<Arc<QueryChannel<HashLookupMapping>>>, ll_sender: oneshot::Sender<Arc<QueryChannel<LatticeLookupMapping>>>) -> Res<()> {
 
         let rtc_connection = self.rtc_connection.clone();
 
@@ -311,13 +321,13 @@ impl PeerConnection {
 
         hl_sender.send(QueryChannel::new(hl_local_channel, hl_remote_channel, hl_local_result_channel, hl_remote_result_channel, move |hashcode| Box::pin(
             accessible_context.clone().hash_lookup(hashcode)
-        ))).map_err(|_| format!("failed to send channel")).unwrap();
+        )).await).map_err(|_| format!("failed to send channel")).unwrap();
 
         let accessible_context = self.accessible_context.clone();
 
         ll_sender.send(QueryChannel::new(ll_local_channel, ll_remote_channel, ll_local_result_channel, ll_remote_result_channel, move |key: Vec<u8>| Box::pin(
             accessible_context.clone().lattice_lookup(key)
-        ))).map_err(|_| format!("failed to send channel")).unwrap();
+        )).await).map_err(|_| format!("failed to send channel")).unwrap();
         Ok(())
     }
     async fn create_data_channel<T: Serialize + DeserializeOwned + Send + Sync + 'static>(&mut self, label: &str) -> Res<DataChannel<T>> {
