@@ -228,7 +228,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
     }
 
     async fn transport_dirty_lat(self: &Arc<Self>, key: &L::Key) -> Res<()> {
-        // requires: self.get_db().is_dirty(&LatDBKey::Lattice(key.clone()))
+        debug_assert!(self.get_db().is_dirty(&LatDBKey::Lattice(key.clone())).unwrap());
         let db_key = LatDBKey::Lattice(key.clone());
         let merkle_hash = match self.get_db().get_value(&db_key)? {
             Some(LatDBValue::Lattice(merkle_hash)) => merkle_hash,
@@ -267,6 +267,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             for key in dirty {
                 match &key {
                     LatDBKey::Computation(comp_key) => {
+                        self.get_db().clear_value_deps(&key)?;
                     }
                     LatDBKey::Lattice(lat_key) => {
                         self.transport_dirty_lat(lat_key).await?;
