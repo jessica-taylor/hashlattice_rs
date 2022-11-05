@@ -58,6 +58,31 @@ impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> DataChannel<T> {
         Ok(())
     }
 
+    async fn on_receive(&self, fun: Box<dyn Send + Sync + Fn(T) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) -> Res<()> {
+        let fun = Arc::new(fun);
+        self.channel.on_message(Box::new(move |message: DataChannelMessage| {
+            let fun = fun.clone();
+            Box::pin(async move {
+                if message.is_string {
+                    println!("Ignoring non-binary message {:?}", message);
+                } else {
+                    let value: T = match rmp_serde::from_slice(&message.data) {
+                        Ok(value) => value,
+                        Err(e) => {
+                            println!("Failed to deserialize message: {:?}", e);
+                            return;
+                        }
+                    };
+                    match fun(value).await {
+                        Ok(()) => (),
+                        Err(e) => println!("Failed to handle message: {:?}", e),
+                    }
+                }
+            })
+        })).await;
+        Ok(())
+    }
+
 }
 
 type QueryId = u64;
@@ -71,6 +96,8 @@ struct QueryChannel<M: TaggedMapping> {
     query_state: Mutex<QueryState<M>>,
     query_channel: DataChannel<(QueryId, M::Key)>,
     result_channel: DataChannel<(QueryId, Result<M::Value, String>)>,
+    remote_query_channel: DataChannel<(QueryId, M::Key)>,
+    remote_result_channel: DataChannel<(QueryId, Result<M::Value, String>)>,
 }
 
 impl<M: TaggedMapping + 'static> QueryChannel<M> {
