@@ -320,8 +320,9 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
     async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
         let computation_key = LatDBKey::Computation(key.clone());
         if let Some(LatDBValue::Computation(value)) = self.get_db().get_value(&computation_key)? {
-            if !self.get_db().is_dirty(&computation_key)? {
+            if self.get_db().is_dirty(&computation_key)? {
                 self.get_db().clear_value_deps(&computation_key)?;
+            } else {
                 return Ok(value);
             }
         }
