@@ -102,13 +102,9 @@ impl<M: TaggedMapping> SqlDepDB<M> {
         Ok(())
     }
     fn is_dirty_raw(&self, key: &[u8]) -> Res<bool> {
-        let mut stmt = self.conn.prepare("SELECT dirty FROM key_value WHERE key = :key")?
+        let mut stmt = self.conn.prepare("SELECT 1 FROM key_value WHERE key = :key AND dirty = true")?
             .bind_by_name(":key", key)?;
-        if stmt.next()? == State::Row {
-            Ok(stmt.read::<i64>(0)? != 0)
-        } else {
-            bail!("Key not found");
-        }
+        Ok(stmt.next()? == State::Row)
     }
 
 }
