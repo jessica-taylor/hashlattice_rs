@@ -4,7 +4,5 @@ pub mod tagged_mapping;
 pub mod lattice;
 pub mod db;
 pub mod sql_db;
-pub mod signalmessage;
-pub mod signalserver;
-pub mod signalclient;
+pub mod transport;
 pub mod js;

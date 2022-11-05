@@ -4,7 +4,7 @@ use tungstenite::protocol::Message;
 use tokio_tungstenite::connect_async;
 
 use crate::error::Res;
-use crate::signalmessage::SignalMessageToClient;
+use crate::transport::signalmessage::SignalMessageToClient;
 
 
 // https://github.com/snapview/tokio-tungstenite/blob/master/examples/autobahn-client.rs
