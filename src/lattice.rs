@@ -198,3 +198,10 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 #[async_trait]
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeMutContext<C, L, LC> for EmptyContext {
 }
+
+struct BytesMapping;
+
+impl TaggedMapping for BytesMapping {
+    type Key = Vec<u8>;
+    type Value = Vec<u8>;
+}

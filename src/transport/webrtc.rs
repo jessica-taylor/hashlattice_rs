@@ -1,8 +1,12 @@
-use std::sync::Arc;
 use core::pin::Pin;
+use std::sync::{Arc, Mutex};
+use std::collections::BTreeMap;
 
+use bytes::Bytes;
 use futures::Future;
-
+use futures::channel::oneshot;
+use anyhow::{anyhow, bail};
+use serde::{Serialize, Deserialize, de::DeserializeOwned};
 use webrtc::api::APIBuilder;
 use webrtc::data_channel::RTCDataChannel;
 use webrtc::data_channel::data_channel_message::DataChannelMessage;
@@ -13,9 +17,16 @@ use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::peer_connection::peer_connection_state::RTCPeerConnectionState;
 
-use crate::error::Res;
+use crate::tagged_mapping::TaggedMapping;
+use crate::crypto::{Hash, HashCode};
+use crate::error::{Res, to_string_result};
+use crate::lattice::{HashLookup, LatMerkleNode};
 
 // https://github.com/webrtc-rs/webrtc/blob/master/examples/examples/data-channels-create/data-channels-create.rs
+
+trait RemoteAccessibleContext : HashLookup {
+    fn lattice_lookup(self: Arc<Self>, key: &[u8]) -> Res<Option<Hash<LatMerkleNode<Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>>>>>;
+}
 
 trait RTCSignalClient : Send + Sync {
     fn send_session_description(&self, sdp: RTCSessionDescription);
@@ -24,13 +35,98 @@ trait RTCSignalClient : Send + Sync {
     fn on_remote_ice_candidate(&self, fun: Box<dyn Fn(RTCIceCandidateInit) -> Pin<Box<dyn Future<Output = Res<()>>>>>);
 }
 
+struct DataChannel<T> {
+    channel: RTCDataChannel,
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> DataChannel<T> {
+    fn new(channel: RTCDataChannel) -> Self {
+        Self {
+            channel,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+
+    async fn send(&self, value: &T) -> Res<()> {
+        let bs = rmp_serde::to_vec(value)?;
+        let len = bs.len();
+        let n = self.channel.send(&Bytes::from(bs)).await?;
+        if n != len {
+            bail!("Failed to send all bytes");
+        }
+        Ok(())
+    }
+
+}
+
+type QueryId = u64;
+
+struct QueryState<M: TaggedMapping> {
+    query_count: QueryId,
+    query_receivers: BTreeMap<QueryId, oneshot::Sender<Res<M::Value>>>,
+}
+
+struct QueryChannel<M: TaggedMapping> {
+    query_state: Mutex<QueryState<M>>,
+    query_channel: DataChannel<(QueryId, M::Key)>,
+    result_channel: DataChannel<(QueryId, Result<M::Value, String>)>,
+}
+
+impl<M: TaggedMapping + 'static> QueryChannel<M> {
+    async fn send_result(&self, qid: QueryId, value: Res<M::Value>) -> Res<()> {
+        self.result_channel.send(&(qid, to_string_result(value))).await
+    }
+    async fn got_result(&self, qid: QueryId, value: Result<M::Value, String>) -> Res<()> {
+        let mut query_state = self.query_state.lock().unwrap();
+        let sender = query_state.query_receivers.remove(&qid);
+        if let Some(sender) = sender {
+            sender.send(value.map_err(|e| anyhow!("{}", e))).unwrap();
+        }
+        Ok(())
+    }
+    async fn query(&self, key: M::Key) -> Res<M::Value> {
+        let (sender, receiver) = oneshot::channel();
+        let qid = {
+            let mut query_state = self.query_state.lock().unwrap();
+            let qid = query_state.query_count;
+            query_state.query_count += 1;
+            query_state.query_receivers.insert(qid, sender);
+            qid
+        };
+        self.query_channel.send(&(qid, key)).await?;
+        receiver.await.unwrap()
+    }
+}
+
+struct HashLookupMapping;
+impl TaggedMapping for HashLookupMapping {
+    type Key = HashCode;
+    type Value = Vec<u8>;
+}
+
+struct LatticeLookupMapping;
+impl TaggedMapping for LatticeLookupMapping {
+    type Key = Vec<u8>;
+    type Value = Hash<Option<LatMerkleNode<Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>>>>;
+}
+
+
+// what's the API?
+// we should have:
+// - hash lookup
+// - lattice lookup
+// - computations? lattice computations? get cached values only
 struct PeerConnection {
+    accessible_context: Arc<dyn RemoteAccessibleContext>,
     signal_client: Arc<dyn RTCSignalClient>,
     rtc_connection: Arc<RTCPeerConnection>,
+    hash_lookup_channel: Option<QueryChannel<HashLookupMapping>>,
+    lattice_lookup_channel: Option<QueryChannel<LatticeLookupMapping>>,
 }
 
 impl PeerConnection {
-    async fn new(signal_client: Arc<dyn RTCSignalClient>) -> Res<Self> {
+    async fn new(accessible_context: Arc<dyn RemoteAccessibleContext>, signal_client: Arc<dyn RTCSignalClient>) -> Res<Self> {
         let api = APIBuilder::new().build();
 
         let config = RTCConfiguration {
@@ -41,8 +137,15 @@ impl PeerConnection {
             ..Default::default()
         };
         let rtc_connection = Arc::new(api.new_peer_connection(config).await?);
-        Ok(Self {signal_client, rtc_connection})
+        Ok(Self {
+            accessible_context,
+            signal_client,
+            rtc_connection,
+            hash_lookup_channel: None,
+            lattice_lookup_channel: None,
+        })
     }
+
     async fn initialize(&mut self) -> Res<()> {
 
         let rtc_connection = self.rtc_connection.clone();
@@ -88,9 +191,21 @@ impl PeerConnection {
 
         self.rtc_connection.on_data_channel(Box::new(|channel: Arc<RTCDataChannel>| Box::pin(async move {
             println!("Got data channel '{}':'{}'.", channel.label(), channel.id());
-            channel.on_message(Box::new(|message: DataChannelMessage| Box::pin(async move {
-                println!("Got data channel message: {:?}", message);
-            }))).await;
+            let label = channel.label().to_string();
+            channel.on_message(Box::new(move |message: DataChannelMessage| {
+                let label = label.clone();
+                Box::pin(async move {
+                    if label == "hash_lookup" {
+                    } else if label == "lattice_lookup" {
+                    } else if label == "hash_lookup_result" {
+                    } else if label == "lattice_lookup_result" {
+                    } else {
+                        println!("unknown channel label");
+                        // TODO panic?
+                    }
+                    println!("Got data channel message: {:?}", message);
+                })
+            })).await;
             channel.on_error(Box::new(|err| Box::pin(async move {
                 println!("Got data channel error: {:?}", err);
             }))).await;
@@ -113,3 +228,5 @@ impl PeerConnection {
         Ok(channel)
     }
 }
+
+// impl RemoteAccessibleContext for PeerConnection

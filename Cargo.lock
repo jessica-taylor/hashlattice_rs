@@ -897,6 +897,7 @@ dependencies = [
  "async-mutex",
  "async-recursion",
  "async-trait",
+ "bytes",
  "deno_core",
  "futures",
  "hex",

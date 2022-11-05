@@ -24,8 +24,8 @@ use crate::tagged_mapping::TaggedMapping;
 use crate::crypto::{Hash, HashCode, hash};
 use crate::lattice::{HashLookup, ComputationImmutContext, HashPut, ComputationLibrary, LatticeLibrary, LatticeImmutContext, LatticeMutContext};
 
-pub type QueryId = usize;
-pub type CtxId = usize;
+pub type QueryId = u64;
+pub type CtxId = u64;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LibraryQuery {
