@@ -460,7 +460,6 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         let merkle_hash = hash_put_generic(&self, &merkle).await?;
         if Some(merkle_hash) != store_merkle_hash {
             self.get_db().set_value_deps(LatDBKey::Lattice(key.clone()), LatDBValue::Lattice(merkle_hash), joined_deps.to_keys())?;
-            self.clone().update_dirty().await?;
         }
         Ok(Some(merkle_hash))
     }
