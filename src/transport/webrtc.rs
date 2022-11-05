@@ -1,4 +1,7 @@
 use std::sync::Arc;
+use core::pin::Pin;
+
+use futures::Future;
 
 use webrtc::api::APIBuilder;
 use webrtc::data_channel::RTCDataChannel;
@@ -16,14 +19,14 @@ use crate::error::Res;
 
 trait RTCSignalClient : Send + Sync {
     fn send_session_description(&self, sdp: RTCSessionDescription);
-    fn on_remote_session_description(&self, fun: Box<dyn Fn(RTCSessionDescription)>);
+    fn on_remote_session_description(&self, fun: Box<dyn Fn(RTCSessionDescription) -> Pin<Box<dyn Future<Output = Res<()>>>>>);
     fn send_ice_candidate(&self, candidate: RTCIceCandidateInit);
-    fn on_remote_ice_candidate(&self, fun: Box<dyn Fn(RTCIceCandidateInit)>);
+    fn on_remote_ice_candidate(&self, fun: Box<dyn Fn(RTCIceCandidateInit) -> Pin<Box<dyn Future<Output = Res<()>>>>>);
 }
 
 struct PeerConnection {
     signal_client: Arc<dyn RTCSignalClient>,
-    rtc_connection: RTCPeerConnection,
+    rtc_connection: Arc<RTCPeerConnection>,
 }
 
 impl PeerConnection {
@@ -37,10 +40,30 @@ impl PeerConnection {
             }],
             ..Default::default()
         };
-        let rtc_connection = api.new_peer_connection(config).await?;
+        let rtc_connection = Arc::new(api.new_peer_connection(config).await?);
         Ok(Self {signal_client, rtc_connection})
     }
     async fn initialize(&mut self) -> Res<()> {
+
+        let rtc_connection = self.rtc_connection.clone();
+
+        self.signal_client.clone().on_remote_session_description(Box::new(move |sdp| {
+            let rtc_connection = rtc_connection.clone();
+            Box::pin(async move {
+                rtc_connection.set_remote_description(sdp).await?;
+                Ok(())
+            })
+        }));
+
+        let rtc_connection = self.rtc_connection.clone();
+
+        self.signal_client.clone().on_remote_ice_candidate(Box::new(move |candidate| {
+            let rtc_connection = rtc_connection.clone();
+            Box::pin(async move {
+                rtc_connection.add_ice_candidate(candidate).await?;
+                Ok(())
+            })
+        }));
 
         self.rtc_connection.on_peer_connection_state_change(Box::new(|s: RTCPeerConnectionState| Box::pin(async move {
             println!("Peer Connection State has changed: {}", s);
@@ -51,14 +74,14 @@ impl PeerConnection {
 
         }))).await;
 
-        let signal_client1 = self.signal_client.clone();
+        let signal_client = self.signal_client.clone();
 
         self.rtc_connection.on_ice_candidate(Box::new(move |candidate| {
-            let signal_client2 = signal_client1.clone();
+            let signal_client = signal_client.clone();
             Box::pin(async move {
                 println!("ICE Candidate: {:?}", candidate);
                 if let Some(candidate) = candidate {
-                    signal_client2.clone().send_ice_candidate(candidate.to_json().await.unwrap());
+                    signal_client.send_ice_candidate(candidate.to_json().await.unwrap());
                 }
             })
         })).await;
