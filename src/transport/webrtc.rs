@@ -1,6 +1,9 @@
 use core::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
+use std::mem;
+use std::cell::RefCell;
+use std::ops::DerefMut;
 
 use bytes::Bytes;
 use futures::Future;
@@ -36,12 +39,12 @@ trait RTCSignalClient : Send + Sync {
 }
 
 struct DataChannel<T> {
-    channel: RTCDataChannel,
+    channel: Arc<RTCDataChannel>,
     _phantom: std::marker::PhantomData<T>,
 }
 
 impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> DataChannel<T> {
-    fn new(channel: RTCDataChannel) -> Self {
+    fn new(channel: Arc<RTCDataChannel>) -> Self {
         Self {
             channel,
             _phantom: std::marker::PhantomData,
@@ -101,6 +104,21 @@ struct QueryChannel<M: TaggedMapping> {
 }
 
 impl<M: TaggedMapping + 'static> QueryChannel<M> {
+    fn new(query_channel: DataChannel<(QueryId, M::Key)>,
+           result_channel: DataChannel<(QueryId, Result<M::Value, String>)>,
+           remote_query_channel: DataChannel<(QueryId, M::Key)>,
+           remote_result_channel: DataChannel<(QueryId, Result<M::Value, String>)>) -> Self {
+        Self {
+            query_state: Mutex::new(QueryState {
+                query_count: 0,
+                query_receivers: BTreeMap::new(),
+            }),
+            query_channel,
+            result_channel,
+            remote_query_channel,
+            remote_result_channel,
+        }
+    }
     async fn send_result(&self, qid: QueryId, value: Res<M::Value>) -> Res<()> {
         self.result_channel.send(&(qid, to_string_result(value))).await
     }
@@ -148,8 +166,8 @@ struct PeerConnection {
     accessible_context: Arc<dyn RemoteAccessibleContext>,
     signal_client: Arc<dyn RTCSignalClient>,
     rtc_connection: Arc<RTCPeerConnection>,
-    hash_lookup_channel: Option<QueryChannel<HashLookupMapping>>,
-    lattice_lookup_channel: Option<QueryChannel<LatticeLookupMapping>>,
+    hash_lookup_channel: oneshot::Receiver<QueryChannel<HashLookupMapping>>,
+    lattice_lookup_channel: oneshot::Receiver<QueryChannel<LatticeLookupMapping>>,
 }
 
 impl PeerConnection {
@@ -164,16 +182,20 @@ impl PeerConnection {
             ..Default::default()
         };
         let rtc_connection = Arc::new(api.new_peer_connection(config).await?);
-        Ok(Self {
+        let (hl_sender, hl_receiver) = oneshot::channel();
+        let (ll_sender, ll_receiver) = oneshot::channel();
+        let mut res = Self {
             accessible_context,
             signal_client,
             rtc_connection,
-            hash_lookup_channel: None,
-            lattice_lookup_channel: None,
-        })
+            hash_lookup_channel: hl_receiver,
+            lattice_lookup_channel: ll_receiver,
+        };
+        res.initialize(hl_sender, ll_sender).await?;
+        Ok(res)
     }
 
-    async fn initialize(&mut self) -> Res<()> {
+    async fn initialize(&mut self, hl_sender: oneshot::Sender<QueryChannel<HashLookupMapping>>, ll_sender: oneshot::Sender<QueryChannel<LatticeLookupMapping>>) -> Res<()> {
 
         let rtc_connection = self.rtc_connection.clone();
 
@@ -184,6 +206,10 @@ impl PeerConnection {
                 Ok(())
             })
         }));
+
+        let offer = self.rtc_connection.create_offer(None).await?;
+        self.rtc_connection.set_local_description(offer.clone()).await?;
+        self.signal_client.send_session_description(offer);
 
         let rtc_connection = self.rtc_connection.clone();
 
@@ -216,43 +242,77 @@ impl PeerConnection {
             })
         })).await;
 
-        self.rtc_connection.on_data_channel(Box::new(|channel: Arc<RTCDataChannel>| Box::pin(async move {
-            println!("Got data channel '{}':'{}'.", channel.label(), channel.id());
-            let label = channel.label().to_string();
-            channel.on_message(Box::new(move |message: DataChannelMessage| {
-                let label = label.clone();
-                Box::pin(async move {
-                    if label == "hash_lookup" {
-                    } else if label == "lattice_lookup" {
-                    } else if label == "hash_lookup_result" {
-                    } else if label == "lattice_lookup_result" {
-                    } else {
-                        println!("unknown channel label");
-                        // TODO panic?
-                    }
-                    println!("Got data channel message: {:?}", message);
-                })
-            })).await;
-            channel.on_error(Box::new(|err| Box::pin(async move {
-                println!("Got data channel error: {:?}", err);
-            }))).await;
-            channel.on_close(Box::new(|| Box::pin(async move {
-                println!("Got data channel close.");
-            }))).await;
-        }))).await;
+        let hl_local_channel = self.create_data_channel("hash_lookup").await?;
+        let hl_local_result_channel = self.create_data_channel("hash_lookup_result").await?;
+        let ll_local_channel = self.create_data_channel("lattice_lookup").await?;
+        let ll_local_result_channel = self.create_data_channel("lattice_lookup_result").await?;
 
-        let offer = self.rtc_connection.create_offer(None).await?;
-        self.rtc_connection.set_local_description(offer.clone()).await?;
-        self.signal_client.send_session_description(offer);
+        let (hl_remote_channel_sender, hl_remote_channel_receiver) = oneshot::channel::<Arc<RTCDataChannel>>();
+        let (hl_remote_result_channel_sender, hl_remote_result_channel_receiver) = oneshot::channel::<Arc<RTCDataChannel>>();
+        let (ll_remote_channel_sender, ll_remote_channel_receiver) = oneshot::channel::<Arc<RTCDataChannel>>();
+        let (ll_remote_result_channel_sender, ll_remote_result_channel_receiver) = oneshot::channel::<Arc<RTCDataChannel>>();
+
+        let hl_remote_channel_sender = Arc::new(Mutex::new(Some(hl_remote_channel_sender)));
+        let hl_remote_result_channel_sender = Arc::new(Mutex::new(Some(hl_remote_result_channel_sender)));
+        let ll_remote_channel_sender = Arc::new(Mutex::new(Some(ll_remote_channel_sender)));
+        let ll_remote_result_channel_sender = Arc::new(Mutex::new(Some(ll_remote_result_channel_sender)));
+
+        self.rtc_connection.on_data_channel(Box::new(move |channel: Arc<RTCDataChannel>| {
+            let hl_remote_channel_sender = hl_remote_channel_sender.clone();
+            let hl_remote_result_channel_sender = hl_remote_result_channel_sender.clone();
+            let ll_remote_channel_sender = ll_remote_channel_sender.clone();
+            let ll_remote_result_channel_sender = ll_remote_result_channel_sender.clone();
+            Box::pin(async move {
+                println!("Got data channel '{}':'{}'.", channel.label(), channel.id());
+                let label = channel.label();
+                if label == "hash_lookup" {
+                    let mut chan = hl_remote_channel_sender.lock().unwrap();
+                    if let Some(s) = mem::replace(chan.deref_mut(), None) {
+                        s.send(channel).map_err(|_| format!("failed to send channel")).unwrap();
+                    }
+
+                } else if label == "hash_lookup_result" {
+                    let mut chan = hl_remote_result_channel_sender.lock().unwrap();
+                    if let Some(s) = mem::replace(chan.deref_mut(), None) {
+                        s.send(channel).map_err(|_| format!("failed to send channel")).unwrap();
+                    }
+                } else if label == "lattice_lookup" {
+                    let mut chan = ll_remote_channel_sender.lock().unwrap();
+                    if let Some(s) = mem::replace(chan.deref_mut(), None) {
+                        s.send(channel).map_err(|_| format!("failed to send channel")).unwrap();
+                    }
+                } else if label == "lattice_lookup_result" {
+                    let mut chan = ll_remote_result_channel_sender.lock().unwrap();
+                    if let Some(s) = mem::replace(chan.deref_mut(), None) {
+                        s.send(channel).map_err(|_| format!("failed to send channel")).unwrap();
+                    }
+                } else {
+                    println!("unknown channel label");
+                    // TODO panic?
+                }
+            })
+            // })).await;
+            // channel.on_error(Box::new(|err| Box::pin(async move {
+            //     println!("Got data channel error: {:?}", err);
+            // }))).await;
+            // channel.on_close(Box::new(|| Box::pin(async move {
+            //     println!("Got data channel close.");
+            // }))).await;
+        })).await;
+
+        let hl_remote_channel = DataChannel::new(hl_remote_channel_receiver.await.unwrap());
+        let hl_remote_result_channel = DataChannel::new(hl_remote_result_channel_receiver.await.unwrap());
+        let ll_remote_channel = DataChannel::new(ll_remote_channel_receiver.await.unwrap());
+        let ll_remote_result_channel = DataChannel::new(ll_remote_result_channel_receiver.await.unwrap());
+
+        hl_sender.send(QueryChannel::new(hl_local_channel, hl_remote_channel, hl_local_result_channel, hl_remote_result_channel)).map_err(|_| format!("failed to send channel")).unwrap();
+        ll_sender.send(QueryChannel::new(ll_local_channel, ll_remote_channel, ll_local_result_channel, ll_remote_result_channel)).map_err(|_| format!("failed to send channel")).unwrap();
+
         Ok(())
     }
-    async fn create_data_channel(&mut self, label: &str) -> Res<Arc<RTCDataChannel>> {
+    async fn create_data_channel<T: Serialize + DeserializeOwned + Send + Sync + 'static>(&mut self, label: &str) -> Res<DataChannel<T>> {
         let channel = self.rtc_connection.create_data_channel(label, None).await?;
-        let channel2 = channel.clone();
-        channel.on_open(Box::new(move || Box::pin(async move {
-            println!("Data channel '{}':'{}' open.", channel2.label(), channel2.id());
-        }))).await;
-        Ok(channel)
+        Ok(DataChannel::new(channel))
     }
 }
 
