@@ -68,14 +68,14 @@ impl<M: TaggedMapping> SqlDepDB<M> {
                 }
             }
         };
-        {
-            let mut stmt = self.conn.prepare("UPDATE key_value SET dirty = true WHERE key IN (SELECT key FROM key_dep WHERE dep = :key)")?
-                .bind_by_name(":key", key)?;
-            if stmt.next()? != State::Done {
-                bail!("set_dependents_dirty: unexpected result");
-            }
-        }
         for dep in non_dirty_deps {
+            {
+                let mut stmt = self.conn.prepare("UPDATE key_value SET dirty = true WHERE key :key")?
+                    .bind_by_name(":key", &*dep)?;
+                if stmt.next()? != State::Done {
+                    bail!("set_dependents_dirty: unexpected result");
+                }
+            }
             self.set_dependents_dirty_raw(&dep)?;
         }
         Ok(())
