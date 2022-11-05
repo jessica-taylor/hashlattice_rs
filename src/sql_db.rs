@@ -36,8 +36,8 @@ impl<M: TaggedMapping> SqlDepDB<M> {
         )")?;
         self.conn.execute("CREATE INDEX IF NOT EXISTS key_dep_key ON key_dep (key)")?;
         self.conn.execute("CREATE INDEX IF NOT EXISTS key_dep_dep ON key_dep (dep)")?;
-        self.conn.execute("CREATE INDEX IF NOT EXISTS key_value_live ON key_value (live)")?;
-        self.conn.execute("CREATE INDEX IF NOT EXISTS key_value_dirty ON key_value (dirty)")?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS key_value_live ON key_value (live) WHERE live = true")?;
+        self.conn.execute("CREATE INDEX IF NOT EXISTS key_value_dirty ON key_value (dirty) WHERE live = true")?;
         Ok(())
     }
 
@@ -230,7 +230,6 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 bail!("Failed to update pin");
             }
         }
-        // TODO: do we set live for dependencies??
         self.set_live_raw(&key)?;
         Ok(())
     }
