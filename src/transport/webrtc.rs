@@ -5,6 +5,7 @@ use std::mem;
 use std::cell::RefCell;
 use std::ops::DerefMut;
 
+use async_trait::async_trait;
 use bytes::Bytes;
 use futures::Future;
 use futures::channel::oneshot;
@@ -27,8 +28,9 @@ use crate::lattice::{HashLookup, LatMerkleNode};
 
 // https://github.com/webrtc-rs/webrtc/blob/master/examples/examples/data-channels-create/data-channels-create.rs
 
+#[async_trait]
 trait RemoteAccessibleContext : HashLookup {
-    fn lattice_lookup(self: Arc<Self>, key: &[u8]) -> Res<Option<Hash<LatMerkleNode<Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>>>>>;
+    async fn lattice_lookup(self: Arc<Self>, key: Vec<u8>) -> Res<Option<Hash<LatMerkleNode<Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>>>>>;
 }
 
 trait RTCSignalClient : Send + Sync {
@@ -101,13 +103,15 @@ struct QueryChannel<M: TaggedMapping> {
     result_channel: DataChannel<(QueryId, Result<M::Value, String>)>,
     remote_query_channel: DataChannel<(QueryId, M::Key)>,
     remote_result_channel: DataChannel<(QueryId, Result<M::Value, String>)>,
+    query_handler: Box<dyn Send + Sync + Fn(M::Key) -> Pin<Box<dyn Send + Future<Output = Res<M::Value>>>>>,
 }
 
 impl<M: TaggedMapping + 'static> QueryChannel<M> {
     fn new(query_channel: DataChannel<(QueryId, M::Key)>,
            result_channel: DataChannel<(QueryId, Result<M::Value, String>)>,
            remote_query_channel: DataChannel<(QueryId, M::Key)>,
-           remote_result_channel: DataChannel<(QueryId, Result<M::Value, String>)>) -> Self {
+           remote_result_channel: DataChannel<(QueryId, Result<M::Value, String>)>,
+           query_handler: impl 'static + Send + Sync + Fn(M::Key) -> Pin<Box<dyn Send + Future<Output = Res<M::Value>>>>) -> Self {
         Self {
             query_state: Mutex::new(QueryState {
                 query_count: 0,
@@ -117,6 +121,7 @@ impl<M: TaggedMapping + 'static> QueryChannel<M> {
             result_channel,
             remote_query_channel,
             remote_result_channel,
+            query_handler: Box::new(query_handler),
         }
     }
     async fn send_result(&self, qid: QueryId, value: Res<M::Value>) -> Res<()> {
@@ -153,7 +158,7 @@ impl TaggedMapping for HashLookupMapping {
 struct LatticeLookupMapping;
 impl TaggedMapping for LatticeLookupMapping {
     type Key = Vec<u8>;
-    type Value = Hash<Option<LatMerkleNode<Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>>>>;
+    type Value = Option<Hash<LatMerkleNode<Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>>>>;
 }
 
 fn send_mutex_oneshot<T>(sender: &Mutex<Option<oneshot::Sender<T>>>, value: T) -> Res<()> {
@@ -302,9 +307,17 @@ impl PeerConnection {
         let ll_remote_channel = DataChannel::new(ll_remote_channel_receiver.await.unwrap());
         let ll_remote_result_channel = DataChannel::new(ll_remote_result_channel_receiver.await.unwrap());
 
-        hl_sender.send(QueryChannel::new(hl_local_channel, hl_remote_channel, hl_local_result_channel, hl_remote_result_channel)).map_err(|_| format!("failed to send channel")).unwrap();
-        ll_sender.send(QueryChannel::new(ll_local_channel, ll_remote_channel, ll_local_result_channel, ll_remote_result_channel)).map_err(|_| format!("failed to send channel")).unwrap();
+        let accessible_context = self.accessible_context.clone();
 
+        hl_sender.send(QueryChannel::new(hl_local_channel, hl_remote_channel, hl_local_result_channel, hl_remote_result_channel, move |hashcode| Box::pin(
+            accessible_context.clone().hash_lookup(hashcode)
+        ))).map_err(|_| format!("failed to send channel")).unwrap();
+
+        let accessible_context = self.accessible_context.clone();
+
+        ll_sender.send(QueryChannel::new(ll_local_channel, ll_remote_channel, ll_local_result_channel, ll_remote_result_channel, move |key: Vec<u8>| Box::pin(
+            accessible_context.clone().lattice_lookup(key)
+        ))).map_err(|_| format!("failed to send channel")).unwrap();
         Ok(())
     }
     async fn create_data_channel<T: Serialize + DeserializeOwned + Send + Sync + 'static>(&mut self, label: &str) -> Res<DataChannel<T>> {
