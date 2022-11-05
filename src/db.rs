@@ -350,25 +350,27 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
     }
 
     async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, LC::Value>>> {
-        let db_value = self.get_db().get_value(&LatDBKey::LatComputation(key.clone()))?;
-        match db_value {
-            Some(LatDBValue::LatComputation(merkle_hash)) => Ok(merkle_hash),
-            None => {
-                let key2 = key.clone();
-                let lat_lib = self.lat_lib.clone();
-                let (value, deps) = LatDepsTracker::with_get_deps(&self, move |this| async move {
-                    lat_lib.eval_lat_computation(&key2, this).await
-                }).await?;
-                let merkle = LatMerkleNode {
-                    value: value,
-                    deps: deps.to_merkle_deps()
-                };
-                let merkle_hash = hash_put_generic(&self, &merkle).await?;
-                self.get_db().set_value_deps(LatDBKey::LatComputation(key.clone()), LatDBValue::LatComputation(merkle_hash), deps.to_keys())?;
-                Ok(merkle_hash)
-            },
-            _ => bail!("Lattice computation key has no lattice computation value"),
+        let lat_comp_key = LatDBKey::LatComputation(key.clone());
+        let db_value = self.get_db().get_value(&lat_comp_key)?;
+        if let Some(LatDBValue::LatComputation(merkle_hash)) = db_value {
+            if self.get_db().is_dirty(&lat_comp_key)? {
+                self.get_db().clear_value_deps(&lat_comp_key)?;
+            } else {
+                return Ok(merkle_hash);
+            }
         }
+        let key2 = key.clone();
+        let lat_lib = self.lat_lib.clone();
+        let (value, deps) = LatDepsTracker::with_get_deps(&self, move |this| async move {
+            lat_lib.eval_lat_computation(&key2, this).await
+        }).await?;
+        let merkle = LatMerkleNode {
+            value: value,
+            deps: deps.to_merkle_deps()
+        };
+        let merkle_hash = hash_put_generic(&self, &merkle).await?;
+        self.get_db().set_value_deps(lat_comp_key, LatDBValue::LatComputation(merkle_hash), deps.to_keys())?;
+        Ok(merkle_hash)
     }
 }
 
