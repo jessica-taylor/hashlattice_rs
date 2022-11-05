@@ -261,17 +261,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                         }
                     }
                     LatDBKey::LatComputation(lat_comp_key) => {
-                        // TODO: when do we just delete it instead, for efficiency? it's just a
-                        // cache so ok to delete
-                        let lat_lib = self.lat_lib.clone();
-                        let (value, deps) = LatDepsTracker::with_get_deps(&self, move |this| async move {
-                            lat_lib.eval_lat_computation(lat_comp_key, this).await
-                        }).await?;
-                        let merkle_hash = hash_put_generic(&self, &LatMerkleNode {
-                            value,
-                            deps: deps.to_merkle_deps(),
-                        }).await?;
-                        self.get_db().set_value_deps(key.clone(), LatDBValue::LatComputation(merkle_hash), deps.to_keys())?;
+                        self.get_db().clear_value_deps(&key)?;
                     }
                     _ => {}
                 }
@@ -386,11 +376,17 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         }
         for (lat_comp_key, lat_comp_merkle_hash) in &deps.lat_comp_deps {
             // TODO: should we just use db value here?
-            let store_merkle_hash = self.clone().eval_lat_computation(lat_comp_key).await?;
-            if store_merkle_hash != *lat_comp_merkle_hash {
-                let lat_comp_merkle = hash_lookup_generic(&self, *lat_comp_merkle_hash).await?;
-                self.clone().join_deps(&lat_comp_merkle.deps, other_ctx.clone()).await?;
+            let db_value = self.get_db().get_value(&LatDBKey::LatComputation(lat_comp_key.clone()))?;
+            match db_value {
+                Some(LatDBValue::LatComputation(store_merkle_hash)) => {
+                    if store_merkle_hash == *lat_comp_merkle_hash {
+                        continue;
+                    }
+                }
+                _ => {}
             }
+            let lat_comp_merkle = hash_lookup_generic(&self, *lat_comp_merkle_hash).await?;
+            self.clone().join_deps(&lat_comp_merkle.deps, other_ctx.clone()).await?;
         }
         Ok(())
     }
