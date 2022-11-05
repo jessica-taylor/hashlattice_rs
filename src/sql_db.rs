@@ -57,15 +57,16 @@ impl<M: TaggedMapping> SqlDepDB<M> {
     }
 
     fn set_dependents_dirty_raw(&mut self, key: &[u8]) -> Res<()> {
-        let deps = {
+        let mut non_dirty_deps = BTreeSet::new();
+        {
             let mut stmt = self.conn.prepare("SELECT dep FROM key_dep WHERE key = :key")?
                 .bind_by_name(":key", &*key)?;
-            let mut old_deps = BTreeSet::new();
             while stmt.next()? != State::Done {
                 let dep = stmt.read::<Vec<u8>>(0)?;
-                old_deps.insert(dep);
+                if !self.is_dirty_raw(&dep)? {
+                    non_dirty_deps.insert(dep);
+                }
             }
-            old_deps
         };
         {
             let mut stmt = self.conn.prepare("UPDATE key_value SET dirty = true WHERE key IN (SELECT key FROM key_dep WHERE dep = :key)")?
@@ -74,7 +75,7 @@ impl<M: TaggedMapping> SqlDepDB<M> {
                 bail!("set_dependents_dirty: unexpected result");
             }
         }
-        for dep in deps {
+        for dep in non_dirty_deps {
             self.set_dependents_dirty_raw(&dep)?;
         }
         Ok(())
