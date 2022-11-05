@@ -32,6 +32,8 @@ pub trait DepDB<M: TaggedMapping> : Send {
 
     fn clear_dead(&mut self) -> Res<()>;
 
+    fn is_dirty(&self, key: &M::Key) -> Res<bool>;
+
     fn get_dirty(&mut self) -> Res<Vec<M::Key>>;
 }
 
@@ -263,6 +265,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                     LatDBKey::LatComputation(lat_comp_key) => {
                         self.get_db().clear_value_deps(&key)?;
                     }
+                    // TODO: computation clear if dependent hashes don't exist?
                     _ => {}
                 }
             }
@@ -317,7 +320,10 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
     async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
         let computation_key = LatDBKey::Computation(key.clone());
         if let Some(LatDBValue::Computation(value)) = self.get_db().get_value(&computation_key)? {
-            return Ok(value);
+            if !self.get_db().is_dirty(&computation_key)? {
+                self.get_db().clear_value_deps(&computation_key)?;
+                return Ok(value);
+            }
         }
         let key2 = key.clone();
         let comp_lib = self.comp_lib.clone();
@@ -375,7 +381,6 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             self.clone().lattice_join_rec(lat_key, *lat_merkle_hash, other_ctx.clone()).await?;
         }
         for (lat_comp_key, lat_comp_merkle_hash) in &deps.lat_comp_deps {
-            // TODO: should we just use db value here?
             let db_value = self.get_db().get_value(&LatDBKey::LatComputation(lat_comp_key.clone()))?;
             match db_value {
                 Some(LatDBValue::LatComputation(store_merkle_hash)) => {

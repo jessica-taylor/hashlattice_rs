@@ -231,6 +231,17 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
         }
     }
 
+    fn is_dirty(&self, key: &M::Key) -> Res<bool> {
+        let key = rmp_serde::to_vec(key)?;
+        let mut stmt = self.conn.prepare("SELECT dirty FROM key_value WHERE key = :key")?
+            .bind_by_name(":key", &*key)?;
+        if stmt.next()? == State::Row {
+            Ok(stmt.read::<i64>(0)? != 0)
+        } else {
+            bail!("Key not found");
+        }
+    }
+
     fn get_dirty(&mut self) -> Res<Vec<M::Key>> {
         let mut stmt = self.conn.prepare("SELECT key FROM key_value WHERE dirty = true")?;
         let mut dirty = Vec::new();
