@@ -384,10 +384,11 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             self.clone().lattice_join_rec(lat_key, *lat_merkle_hash, other_ctx.clone()).await?;
         }
         for (lat_comp_key, lat_comp_merkle_hash) in &deps.lat_comp_deps {
-            let db_value = self.get_db().get_value(&LatDBKey::LatComputation(lat_comp_key.clone()))?;
+            let db_key = LatDBKey::LatComputation(lat_comp_key.clone());
+            let db_value = self.get_db().get_value(&db_key)?;
             match db_value {
                 Some(LatDBValue::LatComputation(store_merkle_hash)) => {
-                    if store_merkle_hash == *lat_comp_merkle_hash {
+                    if !self.get_db().is_dirty(&db_key)? && store_merkle_hash == *lat_comp_merkle_hash {
                         continue;
                     }
                 }
