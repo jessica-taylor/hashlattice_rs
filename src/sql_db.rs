@@ -176,14 +176,26 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 bail!("Failed to delete value");
             }
         }
+        {
+            let mut stmt = self.conn.prepare("INSERT INTO key_value (key, value, pinned, live, dirty) VALUES (:key, :value, :pinned, false, false)")?
+                .bind_by_name(":key", &*key)?
+                .bind_by_name(":value", &*value)?
+                .bind_by_name(":pinned", already_pinned as i64)?;
+            if stmt.next()? != State::Done {
+                bail!("Failed to insert value");
+            }
+        }
         for old_dep in &old_deps {
             if !deps.contains(old_dep) {
-                let mut stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key AND dep = :dep")?
-                    .bind_by_name(":key", &*key)?
-                    .bind_by_name(":dep", &**old_dep)?;
-                if stmt.next()? != State::Done {
-                    bail!("Failed to delete dependency");
+                {
+                    let mut stmt = self.conn.prepare("DELETE FROM key_dep WHERE key = :key AND dep = :dep")?
+                        .bind_by_name(":key", &*key)?
+                        .bind_by_name(":dep", &**old_dep)?;
+                    if stmt.next()? != State::Done {
+                        bail!("Failed to delete dependency");
+                    }
                 }
+                self.set_live_raw(&old_dep)?;
             }
         }
         for dep in deps {
@@ -197,15 +209,6 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                     }
                 }
                 self.set_live_raw(&dep)?;
-            }
-        }
-        {
-            let mut stmt = self.conn.prepare("INSERT INTO key_value (key, value, pinned, live, dirty) VALUES (:key, :value, :pinned, false, false)")?
-                .bind_by_name(":key", &*key)?
-                .bind_by_name(":value", &*value)?
-                .bind_by_name(":pinned", already_pinned as i64)?;
-            if stmt.next()? != State::Done {
-                bail!("Failed to insert value");
             }
         }
         self.set_live_raw(&key)?;
@@ -227,6 +230,7 @@ impl<M: TaggedMapping> DepDB<M> for SqlDepDB<M> {
                 bail!("Failed to update pin");
             }
         }
+        // TODO: do we set live for dependencies??
         self.set_live_raw(&key)?;
         Ok(())
     }
