@@ -228,6 +228,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
     }
 
     async fn transport_dirty_lat(self: &Arc<Self>, key: &L::Key) -> Res<()> {
+        // requires: self.get_db().is_dirty(&LatDBKey::Lattice(key.clone()))
         let db_key = LatDBKey::Lattice(key.clone());
         let merkle_hash = match self.get_db().get_value(&db_key)? {
             Some(LatDBValue::Lattice(merkle_hash)) => merkle_hash,
@@ -325,12 +326,11 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 
     async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
         let computation_key = LatDBKey::Computation(key.clone());
+        if self.get_db().is_dirty(&computation_key)? {
+            self.get_db().clear_value_deps(&computation_key)?;
+        }
         if let Some(LatDBValue::Computation(value)) = self.get_db().get_value(&computation_key)? {
-            if self.get_db().is_dirty(&computation_key)? {
-                self.get_db().clear_value_deps(&computation_key)?;
-            } else {
-                return Ok(value);
-            }
+            return Ok(value);
         }
         let key2 = key.clone();
         let comp_lib = self.comp_lib.clone();
@@ -347,7 +347,11 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeImmutContext<C, L, LC> for LatStore<C, L, LC> {
 
     async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
-        let db_value = self.get_db().get_value(&LatDBKey::Lattice(key.clone()))?;
+        let db_key = LatDBKey::Lattice(key.clone());
+        if self.get_db().is_dirty(&db_key)? {
+            self.transport_dirty_lat(key).await?;
+        }
+        let db_value = self.get_db().get_value(&db_key)?;
         match db_value {
             Some(LatDBValue::Lattice(merkle_hash)) => Ok(Some(merkle_hash)),
             None => Ok(None),
@@ -357,13 +361,12 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 
     async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, LC::Value>>> {
         let lat_comp_key = LatDBKey::LatComputation(key.clone());
+        if self.get_db().is_dirty(&lat_comp_key)? {
+            self.get_db().clear_value_deps(&lat_comp_key)?;
+        }
         let db_value = self.get_db().get_value(&lat_comp_key)?;
         if let Some(LatDBValue::LatComputation(merkle_hash)) = db_value {
-            if self.get_db().is_dirty(&lat_comp_key)? {
-                self.get_db().clear_value_deps(&lat_comp_key)?;
-            } else {
-                return Ok(merkle_hash);
-            }
+            return Ok(merkle_hash);
         }
         let key2 = key.clone();
         let lat_lib = self.lat_lib.clone();
