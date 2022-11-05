@@ -266,13 +266,14 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             }
             for key in dirty {
                 match &key {
+                    LatDBKey::Computation(comp_key) => {
+                    }
                     LatDBKey::Lattice(lat_key) => {
                         self.transport_dirty_lat(lat_key).await?;
                     }
                     LatDBKey::LatComputation(lat_comp_key) => {
                         self.get_db().clear_value_deps(&key)?;
                     }
-                    // TODO: computation clear if dependent hashes don't exist?
                     _ => {}
                 }
             }
