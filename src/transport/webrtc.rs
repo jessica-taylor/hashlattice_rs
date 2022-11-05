@@ -34,9 +34,13 @@ trait RemoteAccessibleContext : HashLookup {
 }
 
 trait RTCSignalClient : Send + Sync {
+
     fn send_session_description(&self, sdp: RTCSessionDescription);
+
     fn on_remote_session_description(&self, fun: Box<dyn Fn(RTCSessionDescription) -> Pin<Box<dyn Future<Output = Res<()>>>>>);
+
     fn send_ice_candidate(&self, candidate: RTCIceCandidateInit);
+
     fn on_remote_ice_candidate(&self, fun: Box<dyn Fn(RTCIceCandidateInit) -> Pin<Box<dyn Future<Output = Res<()>>>>>);
 }
 
@@ -132,6 +136,7 @@ impl<M: TaggedMapping + 'static> QueryChannel<M> {
             remote_result_channel,
             query_handler: Box::new(query_handler),
         });
+
         let this2 = this.clone();
         this.remote_query_channel.on_receive(Box::new(move |(query_id, key)| {
             let this = this2.clone();
@@ -141,18 +146,21 @@ impl<M: TaggedMapping + 'static> QueryChannel<M> {
                 Ok(())
             })
         })).await.unwrap();
+
+        let this2 = this.clone();
+        this.remote_result_channel.on_receive(Box::new(move |(query_id, res)| {
+            let this = this2.clone();
+            Box::pin(async move {
+                let mut query_state = this.query_state.lock().unwrap();
+                let sender = query_state.query_receivers.remove(&query_id);
+                if let Some(sender) = sender {
+                    sender.send(res.map_err(|e| anyhow!("{}", e))).unwrap();
+                }
+                Ok(())
+            })
+        })).await.unwrap();
+
         this
-    }
-    async fn send_result(&self, qid: QueryId, value: Res<M::Value>) -> Res<()> {
-        self.result_channel.send(&(qid, to_string_result(value))).await
-    }
-    async fn got_result(&self, qid: QueryId, value: Result<M::Value, String>) -> Res<()> {
-        let mut query_state = self.query_state.lock().unwrap();
-        let sender = query_state.query_receivers.remove(&qid);
-        if let Some(sender) = sender {
-            sender.send(value.map_err(|e| anyhow!("{}", e))).unwrap();
-        }
-        Ok(())
     }
     async fn query(&self, key: M::Key) -> Res<M::Value> {
         let (sender, receiver) = oneshot::channel();
