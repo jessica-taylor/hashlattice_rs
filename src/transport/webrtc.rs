@@ -1,4 +1,5 @@
 use core::pin::Pin;
+use core::task::Poll;
 use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
 use std::mem;
@@ -7,7 +8,8 @@ use std::ops::DerefMut;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use futures::Future;
+use futures::{Future, FutureExt};
+use futures::future::poll_fn;
 use futures::channel::oneshot;
 use anyhow::{anyhow, bail};
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
@@ -198,6 +200,17 @@ fn send_mutex_oneshot<T>(sender: &Mutex<Option<oneshot::Sender<T>>>, value: T) -
     Ok(())
 }
 
+async fn poll_mutex_option<T>(mutex: &Mutex<Option<T>>) -> T {
+    poll_fn(|_| {
+        let mut mutex = mutex.lock().unwrap();
+        if let Some(value) = mutex.take() {
+            Poll::Ready(value)
+        } else {
+            Poll::Pending
+        }
+    }).await
+}
+
 
 // what's the API?
 // we should have:
@@ -208,8 +221,8 @@ struct PeerConnection {
     accessible_context: Arc<dyn RemoteAccessibleContext>,
     signal_client: Arc<dyn RTCSignalClient>,
     rtc_connection: Arc<RTCPeerConnection>,
-    hash_lookup_channel: oneshot::Receiver<Arc<QueryChannel<HashLookupMapping>>>,
-    lattice_lookup_channel: oneshot::Receiver<Arc<QueryChannel<LatticeLookupMapping>>>,
+    hash_lookup_channel: Mutex<Option<Arc<QueryChannel<HashLookupMapping>>>>,
+    lattice_lookup_channel: Mutex<Option<Arc<QueryChannel<LatticeLookupMapping>>>>,
 }
 
 impl PeerConnection {
@@ -224,20 +237,18 @@ impl PeerConnection {
             ..Default::default()
         };
         let rtc_connection = Arc::new(api.new_peer_connection(config).await?);
-        let (hl_sender, hl_receiver) = oneshot::channel();
-        let (ll_sender, ll_receiver) = oneshot::channel();
         let mut res = Self {
             accessible_context,
             signal_client,
             rtc_connection,
-            hash_lookup_channel: hl_receiver,
-            lattice_lookup_channel: ll_receiver,
+            hash_lookup_channel: Mutex::new(None),
+            lattice_lookup_channel: Mutex::new(None),
         };
-        res.initialize(hl_sender, ll_sender).await?;
+        res.initialize().await?;
         Ok(res)
     }
 
-    async fn initialize(&mut self, hl_sender: oneshot::Sender<Arc<QueryChannel<HashLookupMapping>>>, ll_sender: oneshot::Sender<Arc<QueryChannel<LatticeLookupMapping>>>) -> Res<()> {
+    async fn initialize(&mut self) -> Res<()> {
 
         let rtc_connection = self.rtc_connection.clone();
 
@@ -333,7 +344,7 @@ impl PeerConnection {
             accessible_context.clone().hash_lookup(hashcode)
         )).await;
 
-        hl_sender.send(hl_channel).map_err(|_| format!("failed to send channel")).unwrap();
+        self.hash_lookup_channel.lock().unwrap().replace(hl_channel);
 
         let accessible_context = self.accessible_context.clone();
 
@@ -341,7 +352,7 @@ impl PeerConnection {
             accessible_context.clone().lattice_lookup(key)
         )).await;
 
-        ll_sender.send(ll_channel).map_err(|_| format!("failed to send channel")).unwrap();
+        self.lattice_lookup_channel.lock().unwrap().replace(ll_channel);
         Ok(())
     }
     async fn create_data_channel<T: Serialize + DeserializeOwned + Send + Sync + 'static>(&mut self, label: &str) -> Res<DataChannel<T>> {
@@ -350,4 +361,16 @@ impl PeerConnection {
     }
 }
 
-// impl RemoteAccessibleContext for PeerConnection
+#[async_trait]
+impl HashLookup for PeerConnection {
+    async fn hash_lookup(self: Arc<Self>, hash: HashCode) -> Res<Vec<u8>> {
+        poll_mutex_option(&self.hash_lookup_channel).await.query(hash).await
+    }
+}
+
+#[async_trait]
+impl RemoteAccessibleContext for PeerConnection {
+    async fn lattice_lookup(self: Arc<Self>, key: Vec<u8>) -> Res<Option<Hash<LatMerkleNode<Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>>>>> {
+        poll_mutex_option(&self.lattice_lookup_channel).await.query(key).await
+    }
+}
