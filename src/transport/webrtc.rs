@@ -200,11 +200,11 @@ fn send_mutex_oneshot<T>(sender: &Mutex<Option<oneshot::Sender<T>>>, value: T) -
     Ok(())
 }
 
-async fn poll_mutex_option<T>(mutex: &Mutex<Option<T>>) -> T {
+async fn poll_mutex_option<T: Clone>(mutex: &Mutex<Option<T>>) -> T {
     poll_fn(|_| {
-        let mut mutex = mutex.lock().unwrap();
-        if let Some(value) = mutex.take() {
-            Poll::Ready(value)
+        let lock = mutex.lock().unwrap();
+        if let Some(value) = lock.as_ref() {
+            Poll::Ready(value.clone())
         } else {
             Poll::Pending
         }
