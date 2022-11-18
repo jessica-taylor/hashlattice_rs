@@ -31,19 +31,19 @@ use crate::lattice::{HashLookup, LatMerkleNode};
 // https://github.com/webrtc-rs/webrtc/blob/master/examples/examples/data-channels-create/data-channels-create.rs
 
 #[async_trait]
-trait RemoteAccessibleContext : HashLookup {
+pub trait RemoteAccessibleContext : HashLookup {
     async fn lattice_lookup(self: Arc<Self>, key: Vec<u8>) -> Res<Option<Hash<LatMerkleNode<Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>>>>>;
 }
 
-trait RTCSignalClient : Send + Sync {
+pub trait RTCSignalClient : Send + Sync {
 
     fn send_session_description(&self, sdp: RTCSessionDescription);
 
-    fn on_remote_session_description(&self, fun: Box<dyn Fn(RTCSessionDescription) -> Pin<Box<dyn Future<Output = Res<()>>>>>);
+    fn on_remote_session_description(&self, fun: Box<dyn Send + Sync + Fn(RTCSessionDescription) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>);
 
     fn send_ice_candidate(&self, candidate: RTCIceCandidateInit);
 
-    fn on_remote_ice_candidate(&self, fun: Box<dyn Fn(RTCIceCandidateInit) -> Pin<Box<dyn Future<Output = Res<()>>>>>);
+    fn on_remote_ice_candidate(&self, fun: Box<dyn Send + Sync + Fn(RTCIceCandidateInit) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>);
 }
 
 struct DataChannel<T> {
