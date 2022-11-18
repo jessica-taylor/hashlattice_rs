@@ -27,6 +27,7 @@ use crate::tagged_mapping::TaggedMapping;
 use crate::crypto::{Hash, HashCode};
 use crate::error::{Res, to_string_result};
 use crate::lattice::{HashLookup, LatMerkleNode};
+use crate::transport::signalmessage::Peer;
 
 // https://github.com/webrtc-rs/webrtc/blob/master/examples/examples/data-channels-create/data-channels-create.rs
 
@@ -38,13 +39,13 @@ pub trait RemoteAccessibleContext : HashLookup {
 #[async_trait]
 pub trait RTCSignalClient : Send + Sync {
 
-    async fn send_session_description(self: Arc<Self>, sdp: RTCSessionDescription) -> Res<()>;
+    async fn send_session_description(self: Arc<Self>, peer: Peer, sdp: RTCSessionDescription) -> Res<()>;
 
-    async fn on_remote_session_description(self: Arc<Self>, fun: Box<dyn Send + Sync + Fn(RTCSessionDescription) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) -> Res<()>;
+    async fn on_remote_session_description(self: Arc<Self>, peer: Peer, fun: Box<dyn Send + Sync + Fn(RTCSessionDescription) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) -> Res<()>;
 
-    async fn send_ice_candidate(self: Arc<Self>, candidate: RTCIceCandidateInit) -> Res<()>;
+    async fn send_ice_candidate(self: Arc<Self>, peer: Peer, candidate: RTCIceCandidateInit) -> Res<()>;
 
-    async fn on_remote_ice_candidate(self: Arc<Self>, fun: Box<dyn Send + Sync + Fn(RTCIceCandidateInit) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) -> Res<()>;
+    async fn on_remote_ice_candidate(self: Arc<Self>, peer: Peer, fun: Box<dyn Send + Sync + Fn(RTCIceCandidateInit) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) -> Res<()>;
 }
 
 struct DataChannel<T> {
@@ -219,6 +220,7 @@ async fn poll_mutex_option<T: Clone>(mutex: &Mutex<Option<T>>) -> T {
 // - lattice lookup
 // - computations? lattice computations? get cached values only
 struct PeerConnection {
+    peer: Peer,
     accessible_context: Arc<dyn RemoteAccessibleContext>,
     signal_client: Arc<dyn RTCSignalClient>,
     rtc_connection: Arc<RTCPeerConnection>,
@@ -227,7 +229,7 @@ struct PeerConnection {
 }
 
 impl PeerConnection {
-    async fn new(accessible_context: Arc<dyn RemoteAccessibleContext>, signal_client: Arc<dyn RTCSignalClient>) -> Res<Self> {
+    async fn new(peer: Peer, accessible_context: Arc<dyn RemoteAccessibleContext>, signal_client: Arc<dyn RTCSignalClient>) -> Res<Self> {
         let api = APIBuilder::new().build();
 
         let config = RTCConfiguration {
@@ -239,6 +241,7 @@ impl PeerConnection {
         };
         let rtc_connection = Arc::new(api.new_peer_connection(config).await?);
         let mut res = Self {
+            peer,
             accessible_context,
             signal_client,
             rtc_connection,
@@ -253,7 +256,7 @@ impl PeerConnection {
 
         let rtc_connection = self.rtc_connection.clone();
 
-        self.signal_client.clone().on_remote_session_description(Box::new(move |sdp| {
+        self.signal_client.clone().on_remote_session_description(self.peer, Box::new(move |sdp| {
             let rtc_connection = rtc_connection.clone();
             Box::pin(async move {
                 rtc_connection.set_remote_description(sdp).await?;
@@ -263,11 +266,11 @@ impl PeerConnection {
 
         let offer = self.rtc_connection.create_offer(None).await?;
         self.rtc_connection.set_local_description(offer.clone()).await?;
-        self.signal_client.clone().send_session_description(offer).await?;
+        self.signal_client.clone().send_session_description(self.peer, offer).await?;
 
         let rtc_connection = self.rtc_connection.clone();
 
-        self.signal_client.clone().on_remote_ice_candidate(Box::new(move |candidate| {
+        self.signal_client.clone().on_remote_ice_candidate(self.peer, Box::new(move |candidate| {
             let rtc_connection = rtc_connection.clone();
             Box::pin(async move {
                 rtc_connection.add_ice_candidate(candidate).await?;
@@ -285,13 +288,14 @@ impl PeerConnection {
         }))).await;
 
         let signal_client = self.signal_client.clone();
+        let peer = self.peer;
 
         self.rtc_connection.on_ice_candidate(Box::new(move |candidate| {
             let signal_client = signal_client.clone();
             Box::pin(async move {
                 println!("ICE Candidate: {:?}", candidate);
                 if let Some(candidate) = candidate {
-                    signal_client.clone().send_ice_candidate(candidate.to_json().await.unwrap()).await.unwrap();
+                    signal_client.clone().send_ice_candidate(peer, candidate.to_json().await.unwrap()).await.unwrap();
                 }
             })
         })).await;

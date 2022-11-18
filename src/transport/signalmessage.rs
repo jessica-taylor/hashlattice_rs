@@ -1,16 +1,22 @@
 
+use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
+use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use serde::{Serialize, Deserialize};
 
 use crate::crypto::{Hash, PublicKey};
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+pub type Peer = Hash<PublicKey>;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SignalMessageToServer {
     GetPeers,
-    Send(Hash<PublicKey>, Vec<u8>),
+    SessionDescription(Peer, RTCSessionDescription),
+    IceCandidate(Peer, RTCIceCandidateInit),
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SignalMessageToClient {
-    Peers(Vec<Hash<PublicKey>>),
-    Received(Hash<PublicKey>, Vec<u8>),
+    Peers(Vec<Peer>),
+    SessionDescription(Peer, RTCSessionDescription),
+    IceCandidate(Peer, RTCIceCandidateInit),
 }
