@@ -40,8 +40,21 @@ impl SignalClient {
                 match msg? {
                     Message::Binary(bs) => {
                         let msg: SignalMessageToClient = rmp_serde::from_slice(&bs)?;
-                        println!("Received a message: {:?}", msg);
-                        // ...
+                        match msg {
+                            SignalMessageToClient::SessionDescription(peer, desc) => {
+                                if let Some(handler) = self.remote_session_description_handler.lock().unwrap().get(&peer) {
+                                    handler(desc).await?;
+                                }
+                            },
+                            SignalMessageToClient::IceCandidate(peer, candidate) => {
+                                if let Some(handler) = self.remote_ice_candidate_handler.lock().unwrap().get(&peer) {
+                                    handler(candidate).await?;
+                                }
+                            },
+                            _ => {
+                                println!("Received unexpected message: {:?}", msg);
+                            }
+                        }
                     }
                     other => {
                         println!("Received a message which is not binary: {:?}", other);
