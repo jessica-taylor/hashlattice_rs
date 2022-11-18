@@ -46,7 +46,8 @@ async fn test_db() {
     let mut db = SqlDepDB::<LatDBMapping<EmptyMapping, MaxTupleMapping, EmptyMapping>>::new(":memory:").unwrap();
     db.initialize().unwrap();
     let store = Arc::new(LatStore::new(db, EmptyComputationLibrary, MaxTupleLatLibrary(3), EmptyContext));
-    let key = "first".to_string();
+
+    let mut key = "first".to_string();
     assert!(store.clone().lattice_lookup(&key).await.unwrap().is_none());
 
     assert_eq!(vec![1, 2, 0], hash_lookup_generic(&store, store.lattice_join_elem(&key, vec![1, 2, 0]).await.unwrap().unwrap()).await.unwrap().value);
@@ -55,14 +56,15 @@ async fn test_db() {
     assert_eq!(vec![4, 2, 1], hash_lookup_generic(&store, store.lattice_join_elem(&key, vec![4, 0, 1]).await.unwrap().unwrap()).await.unwrap().value);
     assert_eq!(vec![4, 2, 1], hash_lookup_generic(&store, store.clone().lattice_lookup(&key).await.unwrap().unwrap()).await.unwrap().value);
 
-    // assert_eq!(vec![4, 2, 1], store.lattice_lookup(&key).unwrap().unwrap().0);
-    // 
-    // key = "second".to_string();
-    // assert!(store.lattice_lookup(&key).await.unwrap().is_none());
-    // assert_eq!(vec![1, 0, 1], store.lattice_join(&key, &vec![1, 0, 1], &EmptyContext).unwrap());
-    // assert_eq!(vec![1, 0, 1], store.lattice_lookup(&key).unwrap().unwrap().0);
-    // assert_eq!(vec![1, 2, 3], store.lattice_join(&key, &vec![0, 2, 3], &EmptyContext).unwrap());
-    // assert_eq!(vec![1, 2, 3], store.lattice_lookup(&key).unwrap().unwrap().0);
+    key = "second".to_string();
+    assert!(store.clone().lattice_lookup(&key).await.unwrap().is_none());
 
-    // assert_eq!(vec![4, 2, 1], store.lattice_lookup(&"first".to_string()).unwrap().unwrap().0);
+    assert_eq!(vec![1, 0, 1], hash_lookup_generic(&store, store.lattice_join_elem(&key, vec![1, 0, 1]).await.unwrap().unwrap()).await.unwrap().value);
+    assert_eq!(vec![1, 0, 1], hash_lookup_generic(&store, store.clone().lattice_lookup(&key).await.unwrap().unwrap()).await.unwrap().value);
+
+    assert_eq!(vec![1, 2, 3], hash_lookup_generic(&store, store.lattice_join_elem(&key, vec![0, 2, 3]).await.unwrap().unwrap()).await.unwrap().value);
+    assert_eq!(vec![1, 2, 3], hash_lookup_generic(&store, store.clone().lattice_lookup(&key).await.unwrap().unwrap()).await.unwrap().value);
+
+    assert_eq!(vec![4, 2, 1], hash_lookup_generic(&store, store.clone().lattice_lookup(&"first".to_string()).await.unwrap().unwrap()).await.unwrap().value);
+
 }
