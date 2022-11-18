@@ -411,7 +411,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         Ok(())
     }
 
-    async fn lattice_join(self: Arc<Self>, key: &L::Key, other_merkle_hash: Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
+    pub async fn lattice_join(self: Arc<Self>, key: &L::Key, other_merkle_hash: Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
         let mut lat_deps = BTreeMap::new();
         lat_deps.insert(key.clone(), other_merkle_hash);
         let other_ctx = Arc::new(LatStoreDepsCtx::new(self.clone(), LatMerkleDeps {
@@ -464,6 +464,20 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             self.get_db().set_value_deps(LatDBKey::Lattice(key.clone()), LatDBValue::Lattice(merkle_hash), joined_deps.to_keys())?;
         }
         Ok(Some(merkle_hash))
+    }
+
+    pub async fn lattice_join_elem(self: Arc<Self>, key: &L::Key, value: L::Value) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
+        let lat_lib = self.lat_lib.clone();
+        let (value, deps) = LatDepsTracker::<C, L, LC, _>::with_get_deps(&self, move |this| async move {
+            lat_lib.check_elem(&key, &value, this).await?;
+            Ok(value)
+        }).await?;
+        let merkle = LatMerkleNode {
+            value: value,
+            deps: deps.to_merkle_deps()
+        };
+        let merkle_hash = hash_put_generic(&self, &merkle).await?;
+        self.lattice_join(key, merkle_hash).await
     }
 }
 
