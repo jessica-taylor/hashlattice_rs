@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::marker::PhantomData;
 
 
 use core::fmt::{Debug};
@@ -98,9 +99,9 @@ impl<CK: Ord + Clone, LK: Ord + Clone, LV, LCK: Ord + Clone, LCV> LatDeps<CK, LK
 }
 
 pub struct LatDBMapping<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> {
-    computation: C,
-    lat: L,
-    lat_comp: LC,
+    computation: PhantomData<C>,
+    lat: PhantomData<L>,
+    lat_comp: PhantomData<LC>,
 }
 
 impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> TaggedMapping for LatDBMapping<C, L, LC> {
