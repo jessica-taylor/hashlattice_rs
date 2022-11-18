@@ -1,15 +1,22 @@
 use std::net::SocketAddr;
+use std::collections::BTreeMap;
+use std::sync::Mutex;
 
 use futures::{StreamExt};
 
+use tokio_tungstenite::{WebSocketStream, MaybeTlsStream, connect_async};
 use tokio::net::{TcpListener, TcpStream};
 use tungstenite::protocol::Message;
 
 
 use crate::error::Res;
-use crate::transport::signalmessage::{SignalMessageToServer};
+use crate::transport::signalmessage::{Peer, SignalMessageToClient, SignalMessageToServer};
 
 // https://github.com/snapview/tokio-tungstenite/blob/master/examples/autobahn-server.rs
+
+struct SignalServer {
+    peer_streams: Mutex<BTreeMap<Peer, WebSocketStream<MaybeTlsStream<TcpStream>>>>,
+}
 
 async fn runserver() -> Res<()> {
     // let addr = env::args().nth(1).unwrap_or_else(|| "127.0.0.1:8080".to_string());
