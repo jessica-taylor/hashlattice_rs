@@ -282,17 +282,26 @@ impl PeerConnection {
             })
         })).await?;
 
-        self.rtc_connection.on_peer_connection_state_change(Box::new(|s: RTCPeerConnectionState| Box::pin(async move {
-            println!("Peer Connection State has changed: {}", s);
-
-            if s == RTCPeerConnectionState::Failed {
-                panic!("Peer Connection has gone to failed exiting");
-            }
-
-        }))).await;
-
         let signal_client = self.signal_client.clone();
         let peer = self.peer;
+
+        self.rtc_connection.on_peer_connection_state_change(Box::new(move |s: RTCPeerConnectionState| {
+            let signal_client = signal_client.clone();
+
+            Box::pin(async move {
+                println!("Peer Connection State has changed: {}", s);
+
+                if s == RTCPeerConnectionState::Failed ||
+                   s == RTCPeerConnectionState::Disconnected ||
+                   s == RTCPeerConnectionState::Closed {
+                       signal_client.clone().remove_peer(peer).await.unwrap();
+                }
+            })
+
+        })).await;
+
+
+        let signal_client = self.signal_client.clone();
 
         self.rtc_connection.on_ice_candidate(Box::new(move |candidate| {
             let signal_client = signal_client.clone();
