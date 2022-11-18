@@ -15,6 +15,8 @@ use crate::error::Res;
 use crate::transport::signalmessage::{SignalMessageToClient, SignalMessageToServer, Peer};
 use crate::transport::webrtc::RTCSignalClient;
 
+// https://github.com/snapview/tokio-tungstenite/blob/master/examples/autobahn-client.rs
+
 pub struct SignalClient {
     ws_stream: AsyncMutex<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     remote_session_description_handler: Mutex<BTreeMap<Peer, Box<dyn Send + Sync + Fn(RTCSessionDescription) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>>>,
@@ -95,23 +97,3 @@ impl RTCSignalClient for SignalClient {
 }
 
 
-// https://github.com/snapview/tokio-tungstenite/blob/master/examples/autobahn-client.rs
-
-
-async fn runclient(addr: &str) -> Res<()> {
-    let (mut ws_stream, _) = connect_async(addr).await?;
-    while let Some(msg) = ws_stream.next().await {
-        match msg? {
-            Message::Binary(bs) => {
-                let msg: SignalMessageToClient = rmp_serde::from_slice(&bs)?;
-                println!("Received a message: {:?}", msg);
-                // ...
-            }
-            other => {
-                println!("Received a message which is not binary: {:?}", other);
-            }
-        }
-    }
-
-    Ok(())
-}
