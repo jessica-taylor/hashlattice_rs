@@ -199,9 +199,9 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatStore<C, L, LC> {
     pub fn new(db: impl DepDB<LatDBMapping<C, L, LC>> + 'static,
-               comp_lib: Arc<impl ComputationLibrary<C> + 'static>,
-               lat_lib: Arc<impl LatticeLibrary<C, L, LC> + 'static>,
-               extra_hashlookup: Arc<impl HashLookup + 'static>) -> Self {
+               comp_lib: Arc<dyn ComputationLibrary<C> + 'static>,
+               lat_lib: Arc<dyn LatticeLibrary<C, L, LC> + 'static>,
+               extra_hashlookup: Arc<dyn HashLookup + 'static>) -> Self {
         Self {
             db: Arc::new(Mutex::new(db)),
             comp_lib: comp_lib,
