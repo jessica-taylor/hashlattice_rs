@@ -199,14 +199,14 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
 
 impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatStore<C, L, LC> {
     pub fn new(db: impl DepDB<LatDBMapping<C, L, LC>> + 'static,
-               comp_lib: impl ComputationLibrary<C> + 'static,
-               lat_lib: impl LatticeLibrary<C, L, LC> + 'static,
-               extra_hashlookup: impl HashLookup + 'static) -> Self {
+               comp_lib: Arc<impl ComputationLibrary<C> + 'static>,
+               lat_lib: Arc<impl LatticeLibrary<C, L, LC> + 'static>,
+               extra_hashlookup: Arc<impl HashLookup + 'static>) -> Self {
         Self {
             db: Arc::new(Mutex::new(db)),
-            comp_lib: Arc::new(comp_lib),
-            lat_lib: Arc::new(lat_lib),
-            extra_hashlookup: Arc::new(extra_hashlookup),
+            comp_lib: comp_lib,
+            lat_lib: lat_lib,
+            extra_hashlookup: extra_hashlookup,
             extra_hashlookup_cache: Arc::new(Mutex::new(BTreeMap::new())),
         }
     }

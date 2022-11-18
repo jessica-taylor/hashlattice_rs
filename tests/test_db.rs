@@ -54,7 +54,7 @@ async fn test_join<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: T
 async fn test_db() {
     let mut db = SqlDepDB::<LatDBMapping<EmptyMapping, MaxTupleMapping, EmptyMapping>>::new(":memory:").unwrap();
     db.initialize().unwrap();
-    let store = Arc::new(LatStore::new(db, EmptyComputationLibrary, MaxTupleLatLibrary(3), EmptyContext));
+    let store = Arc::new(LatStore::new(db, Arc::new(EmptyComputationLibrary), Arc::new(MaxTupleLatLibrary(3)), Arc::new(EmptyContext)));
 
     let mut key = "first".to_string();
     assert!(store.clone().lattice_lookup(&key).await.unwrap().is_none());
