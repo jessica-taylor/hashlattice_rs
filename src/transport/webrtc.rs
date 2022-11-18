@@ -35,15 +35,16 @@ pub trait RemoteAccessibleContext : HashLookup {
     async fn lattice_lookup(self: Arc<Self>, key: Vec<u8>) -> Res<Option<Hash<LatMerkleNode<Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>>>>>;
 }
 
+#[async_trait]
 pub trait RTCSignalClient : Send + Sync {
 
-    fn send_session_description(&self, sdp: RTCSessionDescription);
+    async fn send_session_description(self: Arc<Self>, sdp: RTCSessionDescription) -> Res<()>;
 
-    fn on_remote_session_description(&self, fun: Box<dyn Send + Sync + Fn(RTCSessionDescription) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>);
+    async fn on_remote_session_description(self: Arc<Self>, fun: Box<dyn Send + Sync + Fn(RTCSessionDescription) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) -> Res<()>;
 
-    fn send_ice_candidate(&self, candidate: RTCIceCandidateInit);
+    async fn send_ice_candidate(self: Arc<Self>, candidate: RTCIceCandidateInit) -> Res<()>;
 
-    fn on_remote_ice_candidate(&self, fun: Box<dyn Send + Sync + Fn(RTCIceCandidateInit) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>);
+    async fn on_remote_ice_candidate(self: Arc<Self>, fun: Box<dyn Send + Sync + Fn(RTCIceCandidateInit) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) -> Res<()>;
 }
 
 struct DataChannel<T> {
@@ -258,11 +259,11 @@ impl PeerConnection {
                 rtc_connection.set_remote_description(sdp).await?;
                 Ok(())
             })
-        }));
+        })).await?;
 
         let offer = self.rtc_connection.create_offer(None).await?;
         self.rtc_connection.set_local_description(offer.clone()).await?;
-        self.signal_client.send_session_description(offer);
+        self.signal_client.clone().send_session_description(offer).await?;
 
         let rtc_connection = self.rtc_connection.clone();
 
@@ -272,7 +273,7 @@ impl PeerConnection {
                 rtc_connection.add_ice_candidate(candidate).await?;
                 Ok(())
             })
-        }));
+        })).await?;
 
         self.rtc_connection.on_peer_connection_state_change(Box::new(|s: RTCPeerConnectionState| Box::pin(async move {
             println!("Peer Connection State has changed: {}", s);
@@ -290,7 +291,7 @@ impl PeerConnection {
             Box::pin(async move {
                 println!("ICE Candidate: {:?}", candidate);
                 if let Some(candidate) = candidate {
-                    signal_client.send_ice_candidate(candidate.to_json().await.unwrap());
+                    signal_client.clone().send_ice_candidate(candidate.to_json().await.unwrap()).await.unwrap();
                 }
             })
         })).await;

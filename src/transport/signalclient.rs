@@ -1,6 +1,7 @@
 use core::pin::Pin;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
 use futures::{Future, StreamExt};
 use tokio::net::TcpStream;
 use tungstenite::protocol::Message;
@@ -19,7 +20,7 @@ pub struct SignalClient {
 }
 
 impl SignalClient {
-    async fn new(addr: &str) -> Res<Self> {
+    pub async fn new(addr: &str) -> Res<Self> {
         let (ws_stream, _) = connect_async(addr).await?;
         Ok(Self {
             ws_stream,
@@ -29,23 +30,26 @@ impl SignalClient {
     }
 }
 
+#[async_trait]
 impl RTCSignalClient for SignalClient {
-    fn send_session_description(&self, sdp: RTCSessionDescription) {
+    async fn send_session_description(self: Arc<Self>, sdp: RTCSessionDescription) -> Res<()> {
         unimplemented!()
     }
 
-    fn on_remote_session_description(&self, fun: Box<dyn Send + Sync + Fn(RTCSessionDescription) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) {
+    async fn on_remote_session_description(self: Arc<Self>, fun: Box<dyn Send + Sync + Fn(RTCSessionDescription) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) -> Res<()> {
         let mut handler = self.remote_session_description_handler.lock().unwrap();
         *handler = Some(fun);
+        Ok(())
     }
 
-    fn send_ice_candidate(&self, candidate: RTCIceCandidateInit) {
+    async fn send_ice_candidate(self: Arc<Self>, candidate: RTCIceCandidateInit) -> Res<()> {
         unimplemented!()
     }
 
-    fn on_remote_ice_candidate(&self, fun: Box<dyn Send + Sync + Fn(RTCIceCandidateInit) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) {
+    async fn on_remote_ice_candidate(self: Arc<Self>, fun: Box<dyn Send + Sync + Fn(RTCIceCandidateInit) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) -> Res<()> {
         let mut handler = self.remote_ice_candidate_handler.lock().unwrap();
         *handler = Some(fun);
+        Ok(())
     }
 }
 
