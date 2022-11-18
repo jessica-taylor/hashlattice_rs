@@ -411,7 +411,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         Ok(())
     }
 
-    pub async fn lattice_join(self: Arc<Self>, key: &L::Key, other_merkle_hash: Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
+    pub async fn lattice_join(self: &Arc<Self>, key: &L::Key, other_merkle_hash: Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
         let mut lat_deps = BTreeMap::new();
         lat_deps.insert(key.clone(), other_merkle_hash);
         let other_ctx = Arc::new(LatStoreDepsCtx::new(self.clone(), LatMerkleDeps {
@@ -422,7 +422,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         self.lattice_join_rec(key, other_merkle_hash, other_ctx).await
     }
 
-    async fn lattice_join_rec(self: Arc<Self>, key: &L::Key, other_merkle_hash: Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>, other_ctx: Arc<LatStoreDepsCtx<C, L, LC>>) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
+    async fn lattice_join_rec(self: &Arc<Self>, key: &L::Key, other_merkle_hash: Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>, other_ctx: Arc<LatStoreDepsCtx<C, L, LC>>) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
         let store_merkle_hash = self.clone().lattice_lookup(key).await?;
         if store_merkle_hash == Some(other_merkle_hash) {
             return Ok(store_merkle_hash);
@@ -466,7 +466,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         Ok(Some(merkle_hash))
     }
 
-    pub async fn lattice_join_elem(self: Arc<Self>, key: &L::Key, value: L::Value) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
+    pub async fn lattice_join_elem(self: &Arc<Self>, key: &L::Key, value: L::Value) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
         let lat_lib = self.lat_lib.clone();
         let (value, deps) = LatDepsTracker::<C, L, LC, _>::with_get_deps(&self, move |this| async move {
             lat_lib.check_elem(&key, &value, this).await?;
