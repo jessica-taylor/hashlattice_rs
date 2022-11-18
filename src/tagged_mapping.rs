@@ -128,19 +128,19 @@ impl TaggedValue {
 //     }
 // }
 
-pub struct TaggedMap {
-    map: BTreeMap<TaggedKey, TaggedValue>
-}
-
-impl TaggedMap {
-    fn new() -> Self {
-        Self { map: BTreeMap::new() }
-    }
-    fn insert<M: TaggedMapping>(&mut self, tag: Tag<M>, key: &M::Key, value: &M::Value) {
-        self.map.insert(TaggedKey::new(tag, key), TaggedValue::new(tag, value));
-    }
-    fn get<M: TaggedMapping>(&self, tag: Tag<M>, key: &M::Key) -> Result<M::Value, String> {
-        let tag_value = self.map.get(&TaggedKey::new(tag, key)).ok_or(format!("Key not found: {:?}", key))?;
-        tag_value.get_as(tag)
-    }
-}
+// pub struct TaggedMap {
+//     map: BTreeMap<TaggedKey, TaggedValue>
+// }
+// 
+// impl TaggedMap {
+//     fn new() -> Self {
+//         Self { map: BTreeMap::new() }
+//     }
+//     fn insert<M: TaggedMapping>(&mut self, tag: Tag<M>, key: &M::Key, value: &M::Value) {
+//         self.map.insert(TaggedKey::new(tag, key), TaggedValue::new(tag, value));
+//     }
+//     fn get<M: TaggedMapping>(&self, tag: Tag<M>, key: &M::Key) -> Result<M::Value, String> {
+//         let tag_value = self.map.get(&TaggedKey::new(tag, key)).ok_or(format!("Key not found: {:?}", key))?;
+//         tag_value.get_as(tag)
+//     }
+// }
