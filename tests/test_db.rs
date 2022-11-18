@@ -61,6 +61,8 @@ async fn test_db() {
 
     test_join(&store, &key, vec![1, 2, 3], vec![1, 2, 3]).await;
     test_join(&store, &key, vec![2, 1, 3], vec![2, 2, 3]).await;
+    test_join(&store, &key, vec![1, 1, 1], vec![2, 2, 3]).await;
+    test_join(&store, &key, vec![2, 2, 3], vec![2, 2, 3]).await;
 
     key = "second".to_string();
     assert!(store.clone().lattice_lookup(&key).await.unwrap().is_none());
