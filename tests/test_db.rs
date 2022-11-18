@@ -48,9 +48,13 @@ async fn test_db() {
     let store = Arc::new(LatStore::new(db, EmptyComputationLibrary, MaxTupleLatLibrary(3), EmptyContext));
     let key = "first".to_string();
     assert!(store.clone().lattice_lookup(&key).await.unwrap().is_none());
+
     assert_eq!(vec![1, 2, 0], hash_lookup_generic(&store, store.lattice_join_elem(&key, vec![1, 2, 0]).await.unwrap().unwrap()).await.unwrap().value);
-    // assert_eq!(vec![1, 2, 0], store.lattice_lookup(&key).unwrap().unwrap().0);
-    // assert_eq!(vec![4, 2, 1], store.lattice_join(&key, &vec![4, 0, 1], &EmptyContext).unwrap());
+    assert_eq!(vec![1, 2, 0], hash_lookup_generic(&store, store.clone().lattice_lookup(&key).await.unwrap().unwrap()).await.unwrap().value);
+
+    assert_eq!(vec![4, 2, 1], hash_lookup_generic(&store, store.lattice_join_elem(&key, vec![4, 0, 1]).await.unwrap().unwrap()).await.unwrap().value);
+    assert_eq!(vec![4, 2, 1], hash_lookup_generic(&store, store.clone().lattice_lookup(&key).await.unwrap().unwrap()).await.unwrap().value);
+
     // assert_eq!(vec![4, 2, 1], store.lattice_lookup(&key).unwrap().unwrap().0);
     // 
     // key = "second".to_string();
