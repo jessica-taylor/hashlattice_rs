@@ -59,7 +59,7 @@ impl<M: TaggedMapping> SqlDepDB<M> {
     fn set_dependents_dirty_raw(&mut self, key: &[u8]) -> Res<()> {
         let mut non_dirty_deps = BTreeSet::new();
         {
-            let mut stmt = self.conn.prepare("SELECT dep FROM key_dep WHERE key = :key AND dirty = true")?
+            let mut stmt = self.conn.prepare("SELECT dep FROM key_dep INNER JOIN key_value ON key_dep.key = :key AND key_value.key = key_dep.dep AND dirty = true")?
                 .bind_by_name(":key", &*key)?;
             while stmt.next()? != State::Done {
                 let dep = stmt.read::<Vec<u8>>(0)?;
