@@ -1,3 +1,4 @@
+use core::mem::drop;
 use core::pin::Pin;
 use std::sync::{Arc, Mutex};
 use std::collections::BTreeMap;
@@ -45,12 +46,24 @@ impl SignalClient {
                         match msg {
                             SignalMessageToClient::SessionDescription(peer, desc) => {
                                 if let Some(handler) = self.remote_session_description_handler.lock().unwrap().get(&peer) {
-                                    handler(desc).await?;
+                                    let fut = handler(desc);
+                                    drop(handler);
+                                    tokio::spawn(async move {
+                                        if let Err(e) = fut.await {
+                                            println!("Error handling remote session description: {}", e);
+                                        }
+                                    });
                                 }
                             },
                             SignalMessageToClient::IceCandidate(peer, candidate) => {
                                 if let Some(handler) = self.remote_ice_candidate_handler.lock().unwrap().get(&peer) {
-                                    handler(candidate).await?;
+                                    let fut = handler(candidate);
+                                    drop(handler);
+                                    tokio::spawn(async move {
+                                        if let Err(e) = fut.await {
+                                            println!("Error handling remote ice candidate: {}", e);
+                                        }
+                                    });
                                 }
                             },
                             _ => {
