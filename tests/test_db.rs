@@ -40,6 +40,15 @@ impl LatticeLibrary<EmptyMapping, MaxTupleMapping, EmptyMapping> for MaxTupleLat
     }
 }
 
+async fn test_lookup<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static>(store: &Arc<LatStore<C, L, LC>>, key: &L::Key, expected: L::Value) {
+    assert_eq!(expected, hash_lookup_generic(&store, store.clone().lattice_lookup(key).await.unwrap().unwrap()).await.unwrap().value);
+}
+
+async fn test_join<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static>(store: &Arc<LatStore<C, L, LC>>, key: &L::Key, value: L::Value, expected: L::Value) {
+    assert_eq!(expected.clone(), hash_lookup_generic(&store, store.lattice_join_elem(key, value).await.unwrap().unwrap()).await.unwrap().value);
+    test_lookup(store, key, expected).await;
+}
+
 
 #[tokio::test]
 async fn test_db() {
@@ -50,21 +59,14 @@ async fn test_db() {
     let mut key = "first".to_string();
     assert!(store.clone().lattice_lookup(&key).await.unwrap().is_none());
 
-    assert_eq!(vec![1, 2, 0], hash_lookup_generic(&store, store.lattice_join_elem(&key, vec![1, 2, 0]).await.unwrap().unwrap()).await.unwrap().value);
-    assert_eq!(vec![1, 2, 0], hash_lookup_generic(&store, store.clone().lattice_lookup(&key).await.unwrap().unwrap()).await.unwrap().value);
-
-    assert_eq!(vec![4, 2, 1], hash_lookup_generic(&store, store.lattice_join_elem(&key, vec![4, 0, 1]).await.unwrap().unwrap()).await.unwrap().value);
-    assert_eq!(vec![4, 2, 1], hash_lookup_generic(&store, store.clone().lattice_lookup(&key).await.unwrap().unwrap()).await.unwrap().value);
+    test_join(&store, &key, vec![1, 2, 3], vec![1, 2, 3]).await;
+    test_join(&store, &key, vec![2, 1, 3], vec![2, 2, 3]).await;
 
     key = "second".to_string();
     assert!(store.clone().lattice_lookup(&key).await.unwrap().is_none());
 
-    assert_eq!(vec![1, 0, 1], hash_lookup_generic(&store, store.lattice_join_elem(&key, vec![1, 0, 1]).await.unwrap().unwrap()).await.unwrap().value);
-    assert_eq!(vec![1, 0, 1], hash_lookup_generic(&store, store.clone().lattice_lookup(&key).await.unwrap().unwrap()).await.unwrap().value);
+    test_join(&store, &key, vec![1, 0, 1], vec![1, 0, 1]).await;
+    test_join(&store, &key, vec![0, 1, 1], vec![1, 1, 1]).await;
 
-    assert_eq!(vec![1, 2, 3], hash_lookup_generic(&store, store.lattice_join_elem(&key, vec![0, 2, 3]).await.unwrap().unwrap()).await.unwrap().value);
-    assert_eq!(vec![1, 2, 3], hash_lookup_generic(&store, store.clone().lattice_lookup(&key).await.unwrap().unwrap()).await.unwrap().value);
-
-    assert_eq!(vec![4, 2, 1], hash_lookup_generic(&store, store.clone().lattice_lookup(&"first".to_string()).await.unwrap().unwrap()).await.unwrap().value);
-
+    test_lookup(&store, &"first".to_string(), vec![2, 2, 3]).await;
 }
