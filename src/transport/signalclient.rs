@@ -20,8 +20,8 @@ use crate::transport::webrtc::RTCSignalClient;
 
 pub struct SignalClient {
     ws_stream: AsyncMutex<WebSocketStream<MaybeTlsStream<TcpStream>>>,
-    remote_session_description_handler: Mutex<BTreeMap<Peer, Box<dyn Send + Sync + Fn(RTCSessionDescription) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>>>,
-    remote_ice_candidate_handler: Mutex<BTreeMap<Peer, Box<dyn Send + Sync + Fn(RTCIceCandidateInit) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>>>,
+    remote_session_description_handlers: Mutex<BTreeMap<Peer, Box<dyn Send + Sync + Fn(RTCSessionDescription) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>>>,
+    remote_ice_candidate_handlers: Mutex<BTreeMap<Peer, Box<dyn Send + Sync + Fn(RTCIceCandidateInit) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>>>,
 }
 
 impl SignalClient {
@@ -29,8 +29,8 @@ impl SignalClient {
         let (ws_stream, _) = connect_async(addr).await?;
         Ok(Self {
             ws_stream: AsyncMutex::new(ws_stream),
-            remote_session_description_handler: Mutex::new(BTreeMap::new()),
-            remote_ice_candidate_handler: Mutex::new(BTreeMap::new()),
+            remote_session_description_handlers: Mutex::new(BTreeMap::new()),
+            remote_ice_candidate_handlers: Mutex::new(BTreeMap::new()),
         })
     }
 
@@ -45,7 +45,7 @@ impl SignalClient {
                         let msg: SignalMessageToClient = rmp_serde::from_slice(&bs)?;
                         match msg {
                             SignalMessageToClient::SessionDescription(peer, desc) => {
-                                if let Some(handler) = self.remote_session_description_handler.lock().unwrap().get(&peer) {
+                                if let Some(handler) = self.remote_session_description_handlers.lock().unwrap().get(&peer) {
                                     let fut = handler(desc);
                                     drop(handler);
                                     tokio::spawn(async move {
@@ -56,7 +56,7 @@ impl SignalClient {
                                 }
                             },
                             SignalMessageToClient::IceCandidate(peer, candidate) => {
-                                if let Some(handler) = self.remote_ice_candidate_handler.lock().unwrap().get(&peer) {
+                                if let Some(handler) = self.remote_ice_candidate_handlers.lock().unwrap().get(&peer) {
                                     let fut = handler(candidate);
                                     drop(handler);
                                     tokio::spawn(async move {
@@ -90,8 +90,8 @@ impl RTCSignalClient for SignalClient {
     }
 
     async fn on_remote_session_description(self: Arc<Self>, peer: Peer, fun: Box<dyn Send + Sync + Fn(RTCSessionDescription) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) -> Res<()> {
-        let mut handler = self.remote_session_description_handler.lock().unwrap();
-        handler.insert(peer, fun);
+        let mut handlers = self.remote_session_description_handlers.lock().unwrap();
+        handlers.insert(peer, fun);
         Ok(())
     }
 
@@ -103,8 +103,16 @@ impl RTCSignalClient for SignalClient {
     }
 
     async fn on_remote_ice_candidate(self: Arc<Self>, peer: Peer, fun: Box<dyn Send + Sync + Fn(RTCIceCandidateInit) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) -> Res<()> {
-        let mut handler = self.remote_ice_candidate_handler.lock().unwrap();
-        handler.insert(peer, fun);
+        let mut handlers = self.remote_ice_candidate_handlers.lock().unwrap();
+        handlers.insert(peer, fun);
+        Ok(())
+    }
+
+    async fn remove_peer(self: Arc<Self>, peer: Peer) -> Res<()> {
+        let mut handlers = self.remote_session_description_handlers.lock().unwrap();
+        handlers.remove(&peer);
+        let mut handlers = self.remote_ice_candidate_handlers.lock().unwrap();
+        handlers.remove(&peer);
         Ok(())
     }
 }

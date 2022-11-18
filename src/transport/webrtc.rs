@@ -46,6 +46,8 @@ pub trait RTCSignalClient : Send + Sync {
     async fn send_ice_candidate(self: Arc<Self>, peer: Peer, candidate: RTCIceCandidateInit) -> Res<()>;
 
     async fn on_remote_ice_candidate(self: Arc<Self>, peer: Peer, fun: Box<dyn Send + Sync + Fn(RTCIceCandidateInit) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>) -> Res<()>;
+
+    async fn remove_peer(self: Arc<Self>, peer: Peer) -> Res<()>;
 }
 
 struct DataChannel<T> {
@@ -297,6 +299,7 @@ impl PeerConnection {
             Box::pin(async move {
                 println!("ICE Candidate: {:?}", candidate);
                 if let Some(candidate) = candidate {
+                    // TODO spawn?
                     signal_client.clone().send_ice_candidate(peer, candidate.to_json().await.unwrap()).await.unwrap();
                 }
             })
