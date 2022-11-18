@@ -95,10 +95,12 @@ impl<T: Serialize + DeserializeOwned + Send + Sync + 'static> DataChannel<T> {
                             return;
                         }
                     };
-                    match fun(value).await {
-                        Ok(()) => (),
-                        Err(e) => println!("Failed to handle message: {:?}", e),
-                    }
+                    tokio::spawn(async move {
+                        match fun(value).await {
+                            Ok(()) => (),
+                            Err(e) => println!("Failed to handle message: {:?}", e),
+                        }
+                    });
                 }
             })
         })).await;
