@@ -30,6 +30,26 @@ impl SignalClient {
             remote_ice_candidate_handler: Mutex::new(BTreeMap::new()),
         })
     }
+
+    pub async fn handle_messages(self: &Arc<Self>) -> Res<()> {
+        loop {
+            if let Some(msg) = {
+                let mut ws_stream = self.ws_stream.lock().await;
+                ws_stream.next().await
+            } {
+                match msg? {
+                    Message::Binary(bs) => {
+                        let msg: SignalMessageToClient = rmp_serde::from_slice(&bs)?;
+                        println!("Received a message: {:?}", msg);
+                        // ...
+                    }
+                    other => {
+                        println!("Received a message which is not binary: {:?}", other);
+                    }
+                }
+            }
+        }
+    }
 }
 
 #[async_trait]
