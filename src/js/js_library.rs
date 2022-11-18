@@ -2,7 +2,7 @@ use core::cmp::Ordering;
 use core::pin::Pin;
 use core::task::{Poll, Context};
 use std::sync::{Arc, Mutex};
-use std::rc::Rc;
+
 use std::sync::mpsc::{Sender, Receiver, channel, TryRecvError};
 use std::collections::BTreeMap;
 use std::thread::{spawn, JoinHandle};
@@ -15,13 +15,13 @@ use futures::future::{FutureExt, poll_fn};
 use async_trait::async_trait;
 use anyhow::bail;
 use serde::{Serialize, Deserialize};
-use deno_core::error::AnyError;
-use deno_core::{JsRuntime, Extension, RuntimeOptions, op, OpState, Resource};
+
+
 use deno_core::serde_json::{Value as SerdeJsValue, to_string as json_to_string};
 
 use crate::error::Res;
 use crate::tagged_mapping::TaggedMapping;
-use crate::crypto::{Hash, HashCode, hash};
+use crate::crypto::{Hash, HashCode};
 use crate::lattice::{HashLookup, ComputationImmutContext, HashPut, ComputationLibrary, LatticeLibrary, LatticeImmutContext, LatticeMutContext, LatMerkleNode, hash_lookup_generic, hash_put_generic};
 use crate::js::runtime_channel::{RuntimeState, CtxId, QueryId, LibraryQuery, LibraryResult, CtxQuery, CtxResult, MessageToRuntime, MessageFromRuntime};
 
@@ -81,8 +81,8 @@ impl HashLookup for DynContext {
 impl HashPut for DynContext {
      async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
          match &*self {
-             DynContext::ComputationImmut(ctx) => bail!("Cannot hash_put in ComputationImmutContext"),
-             DynContext::LatticeImmut(ctx) => bail!("Cannot hash_put in LatticeImmutContext"),
+             DynContext::ComputationImmut(_ctx) => bail!("Cannot hash_put in ComputationImmutContext"),
+             DynContext::LatticeImmut(_ctx) => bail!("Cannot hash_put in LatticeImmutContext"),
              DynContext::LatticeMut(ctx) => ctx.clone().hash_put(value).await,
          }
      }
@@ -105,7 +105,7 @@ impl ComputationImmutContext<JsMapping> for DynContext {
 impl LatticeImmutContext<JsMapping, JsMapping, JsMapping> for DynContext {
      async fn lattice_lookup(self: Arc<Self>, key: &JsValue) -> Res<Option<Hash<LatMerkleNode<JsValue, JsValue, JsValue, JsValue, JsValue>>>> {
          match &*self {
-             DynContext::ComputationImmut(ctx) => bail!("Cannot lattice_lookup in ComputationImmutContext"),
+             DynContext::ComputationImmut(_ctx) => bail!("Cannot lattice_lookup in ComputationImmutContext"),
              DynContext::LatticeImmut(ctx) => ctx.clone().lattice_lookup(key).await,
              DynContext::LatticeMut(ctx) => ctx.clone().lattice_lookup(key).await,
          }
@@ -113,7 +113,7 @@ impl LatticeImmutContext<JsMapping, JsMapping, JsMapping> for DynContext {
  
      async fn eval_lat_computation(self: Arc<Self>, key: &JsValue) -> Res<Hash<LatMerkleNode<JsValue, JsValue, JsValue, JsValue, JsValue>>> {
          match &*self {
-             DynContext::ComputationImmut(ctx) => bail!("Cannot eval_lat_computation in ComputationImmutContext"),
+             DynContext::ComputationImmut(_ctx) => bail!("Cannot eval_lat_computation in ComputationImmutContext"),
              DynContext::LatticeImmut(ctx) => ctx.clone().eval_lat_computation(key).await,
              DynContext::LatticeMut(ctx) => ctx.clone().eval_lat_computation(key).await,
          }

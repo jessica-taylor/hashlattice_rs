@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use futures::{StreamExt, TryStreamExt};
+use futures::{StreamExt};
 
 use tokio::net::{TcpListener, TcpStream};
 use tungstenite::protocol::Message;

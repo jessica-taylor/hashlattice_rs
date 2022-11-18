@@ -3,8 +3,8 @@ use std::ops::DerefMut;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{Sender, Receiver, TryRecvError};
-use std::rc::Rc;
-use core::cmp::Ordering;
+
+
 use core::pin::Pin;
 
 use futures::task::{Poll, Context};
@@ -14,15 +14,15 @@ use futures::channel::oneshot;
 use anyhow::{anyhow, bail};
 use serde::{Serialize, Deserialize};
 use deno_core::serde_v8::{to_v8, from_v8};
-use deno_core::v8::{Value as V8Value, Function as V8Function, Local, Global};
+use deno_core::v8::{Function as V8Function, Local, Global};
 use deno_core::error::AnyError;
 use deno_core::{JsRuntime, Extension, RuntimeOptions, op, OpState, Resource};
-use deno_core::serde_json::{Value as JsValue, to_string as json_to_string};
+use deno_core::serde_json::{Value as JsValue};
 
 use crate::error::Res;
-use crate::tagged_mapping::TaggedMapping;
-use crate::crypto::{Hash, HashCode, hash};
-use crate::lattice::{HashLookup, ComputationImmutContext, HashPut, ComputationLibrary, LatticeLibrary, LatticeImmutContext, LatticeMutContext};
+
+use crate::crypto::{Hash, HashCode};
+
 
 pub type QueryId = u64;
 pub type CtxId = u64;

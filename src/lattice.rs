@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use anyhow::bail;
 use async_trait::async_trait;
-use core::pin::Pin;
+
 
 use serde::{Serialize, Deserialize, de::DeserializeOwned};
 
@@ -15,7 +15,7 @@ use crate::tagged_mapping::{TaggedMapping};
 #[async_trait]
 pub trait HashLookup : Send + Sync {
 
-    async fn hash_lookup(self: Arc<Self>, hash: HashCode) -> Res<Vec<u8>> {
+    async fn hash_lookup(self: Arc<Self>, _hash: HashCode) -> Res<Vec<u8>> {
         bail!("hash_lookup not implemented")
     }
 }
@@ -28,7 +28,7 @@ pub async fn hash_lookup_generic<H: HashLookup + ?Sized, T: DeserializeOwned>(hl
 #[async_trait]
 pub trait HashPut : HashLookup + Send + Sync {
 
-    async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
+    async fn hash_put(self: Arc<Self>, _value: Vec<u8>) -> Res<HashCode> {
         bail!("hash_put not implemented")
     }
 
@@ -43,7 +43,7 @@ pub async fn hash_put_generic<H: HashPut + ?Sized, T: Serialize>(hp: &Arc<H>, va
 #[async_trait]
 pub trait ComputationImmutContext<C: TaggedMapping> : HashLookup + Send + Sync {
 
-    async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
+    async fn eval_computation(self: Arc<Self>, _key: &C::Key) -> Res<C::Value> {
         bail!("eval_computation not implemented")
     }
 }
@@ -52,7 +52,7 @@ pub trait ComputationImmutContext<C: TaggedMapping> : HashLookup + Send + Sync {
 #[async_trait]
 pub trait ComputationLibrary<C: TaggedMapping + 'static> : Send + Sync {
 
-    async fn eval_computation(self: Arc<Self>, key: &C::Key, ctx: Arc<dyn ComputationImmutContext<C>>) -> Res<C::Value> {
+    async fn eval_computation(self: Arc<Self>, _key: &C::Key, _ctx: Arc<dyn ComputationImmutContext<C>>) -> Res<C::Value> {
         bail!("eval_computation not implemented")
     }
 }
@@ -61,19 +61,19 @@ pub trait ComputationLibrary<C: TaggedMapping + 'static> : Send + Sync {
 #[async_trait]
 pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> : Send + Sync {
 
-    async fn check_elem(self: Arc<Self>, key: &L::Key, value: &L::Value, ctx: Arc<dyn LatticeImmutContext<C, L, LC>>) -> Res<()> {
+    async fn check_elem(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _ctx: Arc<dyn LatticeImmutContext<C, L, LC>>) -> Res<()> {
         bail!("check_elem not implemented")
     }
 
-    async fn join(self: Arc<Self>, key: &L::Key, a: &L::Value, b: &L::Value, ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<Option<L::Value>> {
+    async fn join(self: Arc<Self>, _key: &L::Key, _a: &L::Value, _b: &L::Value, _ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<Option<L::Value>> {
         bail!("join not implemented")
     }
 
-    async fn transport(self: Arc<Self>, key: &L::Key, value: &L::Value, old_ctx: Arc<dyn LatticeImmutContext<C, L, LC>>, new_ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<Option<L::Value>> {
+    async fn transport(self: Arc<Self>, _key: &L::Key, value: &L::Value, _old_ctx: Arc<dyn LatticeImmutContext<C, L, LC>>, _new_ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<Option<L::Value>> {
         Ok(Some(value.clone()))
     }
 
-    async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key, ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<LC::Value> {
+    async fn eval_lat_computation(self: Arc<Self>, _key: &LC::Key, _ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<LC::Value> {
         bail!("eval_lat_computation not implemented")
     }
 }

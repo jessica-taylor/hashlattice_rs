@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use anyhow::{anyhow, bail};
+use anyhow::{bail};
 use async_trait::async_trait;
 
 use hashlattice::error::Res;
@@ -46,7 +46,7 @@ async fn test_db() {
     let mut db = SqlDepDB::<LatDBMapping<EmptyMapping, MaxTupleMapping, EmptyMapping>>::new(":memory:").unwrap();
     db.initialize().unwrap();
     let store = Arc::new(LatStore::new(db, EmptyComputationLibrary, MaxTupleLatLibrary(3), EmptyContext));
-    let mut key = "first".to_string();
+    let key = "first".to_string();
     assert!(store.clone().lattice_lookup(&key).await.unwrap().is_none());
     assert_eq!(vec![1, 2, 0], hash_lookup_generic(&store, store.lattice_join_elem(&key, vec![1, 2, 0]).await.unwrap().unwrap()).await.unwrap().value);
     // assert_eq!(vec![1, 2, 0], store.lattice_lookup(&key).unwrap().unwrap().0);

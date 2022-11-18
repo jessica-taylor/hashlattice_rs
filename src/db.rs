@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use core::pin::Pin;
+
 use core::fmt::{Debug};
 
 use futures::Future;
@@ -10,10 +10,10 @@ use async_trait::async_trait;
 use async_recursion::async_recursion;
 
 use crate::error::Res;
-use crate::crypto::{HashCode, hash_of_bytes, Hash, hash};
+use crate::crypto::{HashCode, hash_of_bytes, Hash};
 use crate::tagged_mapping::TaggedMapping;
-use crate::lattice::{HashLookup, hash_lookup_generic, hash_put_generic, LatticeLibrary, ComputationLibrary, ComputationImmutContext, HashPut, LatticeImmutContext, LatticeMutContext, LatMerkleDeps, LatMerkleNode, EmptyContext};
-use serde::{Serialize, Deserialize, de::DeserializeOwned};
+use crate::lattice::{HashLookup, hash_lookup_generic, hash_put_generic, LatticeLibrary, ComputationLibrary, ComputationImmutContext, HashPut, LatticeImmutContext, LatticeMutContext, LatMerkleDeps, LatMerkleNode};
+use serde::{Serialize, Deserialize};
 
 /// a key-value store with key-key dependencies; auto-removes unpinned, non-depended-on keys
 pub trait DepDB<M: TaggedMapping> : Send {
@@ -247,7 +247,6 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                 let ((), tr_deps) = LatDepsTracker::with_get_deps(self, move |this| async move {
                     lat_lib.check_elem(&key, &tr_value2, this).await
                 }).await?;
-                let merkle_deps = tr_deps.to_merkle_deps();
                 let merkle_hash = hash_put_generic(self, &LatMerkleNode {
                     value: tr_value,
                     deps: tr_deps.to_merkle_deps(),
@@ -266,13 +265,13 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             }
             for key in dirty {
                 match &key {
-                    LatDBKey::Computation(comp_key) => {
+                    LatDBKey::Computation(_comp_key) => {
                         self.get_db().clear_value_deps(&key)?;
                     }
                     LatDBKey::Lattice(lat_key) => {
                         self.transport_dirty_lat(lat_key).await?;
                     }
-                    LatDBKey::LatComputation(lat_comp_key) => {
+                    LatDBKey::LatComputation(_lat_comp_key) => {
                         self.get_db().clear_value_deps(&key)?;
                     }
                     _ => {}
