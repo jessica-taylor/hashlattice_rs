@@ -83,7 +83,16 @@ impl SignalServer {
                                 }
                             }
                             SignalMessageToServer::IceCandidate(remote_peer, candidate) => {
-                                unimplemented!()
+                                let msg = SignalMessageToClient::IceCandidate(this_peer.ok_or(anyhow!("must set peer first"))?, candidate);
+                                let opt_stream = {
+                                    let peer_streams = self.peer_streams.lock().unwrap();
+                                    peer_streams.get(&remote_peer).cloned()
+                                };
+                                if let Some(stream) = opt_stream {
+                                    let mut stream = stream.lock().await;
+                                    let bs = rmp_serde::to_vec(&msg)?;
+                                    stream.send(Message::Binary(bs)).await?;
+                                }
                             }
                             _ => println!("Received a message from {}: {:?}", peer, msg),
                         }
