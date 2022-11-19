@@ -3,8 +3,9 @@ use std::net::SocketAddr;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
+use anyhow::anyhow;
 use async_mutex::Mutex as AsyncMutex;
-use futures::{StreamExt};
+use futures::{StreamExt, SinkExt};
 
 use tokio_tungstenite::{WebSocketStream, MaybeTlsStream, connect_async};
 use tokio::net::{TcpListener, TcpStream};
@@ -70,7 +71,16 @@ impl SignalServer {
                                 this_peer = Some(peer);
                             }
                             SignalMessageToServer::SessionDescription(remote_peer, session_desc) => {
-                                unimplemented!()
+                                let msg = SignalMessageToClient::SessionDescription(this_peer.ok_or(anyhow!("must set peer first"))?, session_desc);
+                                let opt_stream = {
+                                    let peer_streams = self.peer_streams.lock().unwrap();
+                                    peer_streams.get(&remote_peer).cloned()
+                                };
+                                if let Some(stream) = opt_stream {
+                                    let mut stream = stream.lock().await;
+                                    let bs = rmp_serde::to_vec(&msg)?;
+                                    stream.send(Message::Binary(bs)).await?;
+                                }
                             }
                             SignalMessageToServer::IceCandidate(remote_peer, candidate) => {
                                 unimplemented!()

@@ -17,7 +17,6 @@ pub enum SignalMessageToServer {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SignalMessageToClient {
-    SetPeer,
     Peers(Vec<Peer>),
     SessionDescription(Peer, RTCSessionDescription),
     IceCandidate(Peer, RTCIceCandidateInit),
