@@ -28,8 +28,8 @@ pub struct SignalClient {
 
 impl SignalClient {
     pub async fn new(this_peer: Peer, addr: &str) -> Res<Self> {
-        let (ws_stream, _) = connect_async(addr).await?;
-        // TODO send this peer to server
+        let (mut ws_stream, _) = connect_async(addr).await?;
+        ws_stream.send(Message::Binary(serde_json::to_vec(&SignalMessageToServer::SetPeer(this_peer))?)).await?;
         Ok(Self {
             this_peer,
             ws_stream: AsyncMutex::new(ws_stream),
