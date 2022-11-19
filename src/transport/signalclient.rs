@@ -19,15 +19,17 @@ use crate::transport::webrtc::RTCSignalClient;
 // https://github.com/snapview/tokio-tungstenite/blob/master/examples/autobahn-client.rs
 
 pub struct SignalClient {
+    this_peer: Peer,
     ws_stream: AsyncMutex<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     remote_session_description_handlers: Mutex<BTreeMap<Peer, Box<dyn Send + Sync + Fn(RTCSessionDescription) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>>>,
     remote_ice_candidate_handlers: Mutex<BTreeMap<Peer, Box<dyn Send + Sync + Fn(RTCIceCandidateInit) -> Pin<Box<dyn Send + Future<Output = Res<()>>>>>>>,
 }
 
 impl SignalClient {
-    pub async fn new(addr: &str) -> Res<Self> {
+    pub async fn new(this_peer: Peer, addr: &str) -> Res<Self> {
         let (ws_stream, _) = connect_async(addr).await?;
         Ok(Self {
+            this_peer,
             ws_stream: AsyncMutex::new(ws_stream),
             remote_session_description_handlers: Mutex::new(BTreeMap::new()),
             remote_ice_candidate_handlers: Mutex::new(BTreeMap::new()),
@@ -82,8 +84,8 @@ impl SignalClient {
 
 #[async_trait]
 impl RTCSignalClient for SignalClient {
-    async fn send_session_description(self: Arc<Self>, peer: Peer, sdp: RTCSessionDescription) -> Res<()> {
-        let msg = SignalMessageToServer::SessionDescription(peer, sdp);
+    async fn send_session_description(self: Arc<Self>, remote_peer: Peer, sdp: RTCSessionDescription) -> Res<()> {
+        let msg = SignalMessageToServer::SessionDescription(self.this_peer, remote_peer, sdp);
         let mut ws_stream = self.ws_stream.lock().await;
         ws_stream.send(Message::Binary(serde_json::to_vec(&msg)?)).await?;
         Ok(())
@@ -95,8 +97,8 @@ impl RTCSignalClient for SignalClient {
         Ok(())
     }
 
-    async fn send_ice_candidate(self: Arc<Self>, peer: Peer, candidate: RTCIceCandidateInit) -> Res<()> {
-        let msg = SignalMessageToServer::IceCandidate(peer, candidate);
+    async fn send_ice_candidate(self: Arc<Self>, remote_peer: Peer, candidate: RTCIceCandidateInit) -> Res<()> {
+        let msg = SignalMessageToServer::IceCandidate(self.this_peer, remote_peer, candidate);
         let mut ws_stream = self.ws_stream.lock().await;
         ws_stream.send(Message::Binary(serde_json::to_vec(&msg)?)).await?;
         Ok(())

@@ -9,9 +9,9 @@ pub type Peer = Hash<PublicKey>;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SignalMessageToServer {
-    GetPeers,
-    SessionDescription(Peer, RTCSessionDescription),
-    IceCandidate(Peer, RTCIceCandidateInit),
+    GetPeers(Peer),
+    SessionDescription(Peer, Peer, RTCSessionDescription),
+    IceCandidate(Peer, Peer, RTCIceCandidateInit),
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
