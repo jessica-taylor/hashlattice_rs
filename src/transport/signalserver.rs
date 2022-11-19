@@ -53,6 +53,7 @@ impl SignalServer {
 
     async fn handle_connection(self: Arc<Self>, peer: SocketAddr, stream: TcpStream) -> Res<()> {
         let mut ws_stream = Arc::new(AsyncMutex::new(tokio_tungstenite::accept_async(stream).await?));
+        let mut this_peer: Option<Peer> = None;
         loop {
             let mut stream = ws_stream.lock().await;
             let opt_msg = stream.next().await;
@@ -63,9 +64,10 @@ impl SignalServer {
                     Message::Binary(bs) => {
                         let msg: SignalMessageToServer = rmp_serde::from_slice(&bs)?;
                         match msg {
-                            SignalMessageToServer::SetPeer(this_peer) => {
+                            SignalMessageToServer::SetPeer(peer) => {
                                 let mut peer_streams = self.peer_streams.lock().unwrap();
-                                peer_streams.insert(this_peer, ws_stream.clone());
+                                peer_streams.insert(peer, ws_stream.clone());
+                                this_peer = Some(peer);
                             }
                             SignalMessageToServer::SessionDescription(remote_peer, session_desc) => {
                                 unimplemented!()
