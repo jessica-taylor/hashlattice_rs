@@ -16,6 +16,7 @@ use crate::error::Res;
 use crate::transport::signalmessage::{SignalMessageToClient, SignalMessageToServer, Peer};
 use crate::transport::webrtc::RTCSignalClient;
 
+
 // https://github.com/snapview/tokio-tungstenite/blob/master/examples/autobahn-client.rs
 
 pub struct SignalClient {
@@ -28,6 +29,7 @@ pub struct SignalClient {
 impl SignalClient {
     pub async fn new(this_peer: Peer, addr: &str) -> Res<Self> {
         let (ws_stream, _) = connect_async(addr).await?;
+        // TODO send this peer to server
         Ok(Self {
             this_peer,
             ws_stream: AsyncMutex::new(ws_stream),
@@ -85,7 +87,7 @@ impl SignalClient {
 #[async_trait]
 impl RTCSignalClient for SignalClient {
     async fn send_session_description(self: Arc<Self>, remote_peer: Peer, sdp: RTCSessionDescription) -> Res<()> {
-        let msg = SignalMessageToServer::SessionDescription(self.this_peer, remote_peer, sdp);
+        let msg = SignalMessageToServer::SessionDescription(remote_peer, sdp);
         let mut ws_stream = self.ws_stream.lock().await;
         ws_stream.send(Message::Binary(serde_json::to_vec(&msg)?)).await?;
         Ok(())
@@ -98,7 +100,7 @@ impl RTCSignalClient for SignalClient {
     }
 
     async fn send_ice_candidate(self: Arc<Self>, remote_peer: Peer, candidate: RTCIceCandidateInit) -> Res<()> {
-        let msg = SignalMessageToServer::IceCandidate(self.this_peer, remote_peer, candidate);
+        let msg = SignalMessageToServer::IceCandidate(remote_peer, candidate);
         let mut ws_stream = self.ws_stream.lock().await;
         ws_stream.send(Message::Binary(serde_json::to_vec(&msg)?)).await?;
         Ok(())

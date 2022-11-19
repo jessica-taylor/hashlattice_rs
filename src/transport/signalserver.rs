@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
+use async_mutex::Mutex as AsyncMutex;
 use futures::{StreamExt};
 
 use tokio_tungstenite::{WebSocketStream, MaybeTlsStream, connect_async};
@@ -15,7 +16,7 @@ use crate::transport::signalmessage::{Peer, SignalMessageToClient, SignalMessage
 // https://github.com/snapview/tokio-tungstenite/blob/master/examples/autobahn-server.rs
 
 pub struct SignalServer {
-    peer_streams: Mutex<BTreeMap<Peer, WebSocketStream<MaybeTlsStream<TcpStream>>>>,
+    peer_streams: Mutex<BTreeMap<Peer, Arc<AsyncMutex<WebSocketStream<TcpStream>>>>>,
 }
 
 impl SignalServer {
@@ -50,13 +51,24 @@ impl SignalServer {
     }
 
     async fn handle_connection(self: Arc<Self>, peer: SocketAddr, stream: TcpStream) -> Res<()> {
-        let mut ws_stream = tokio_tungstenite::accept_async(stream).await?;
-        while let Some(msg) = ws_stream.next().await {
+        let mut ws_stream = Arc::new(AsyncMutex::new(tokio_tungstenite::accept_async(stream).await?));
+        while let Some(msg) = ws_stream.lock().await.next().await {
             match msg? {
                 Message::Binary(bs) => {
                     let msg: SignalMessageToServer = rmp_serde::from_slice(&bs)?;
-                    println!("Received a message from {}: {:?}", peer, msg);
-                    // ...
+                    match msg {
+                        SignalMessageToServer::SetPeer(this_peer) => {
+                            let mut peer_streams = self.peer_streams.lock().unwrap();
+                            peer_streams.insert(this_peer, ws_stream.clone());
+                        }
+                        SignalMessageToServer::SessionDescription(remote_peer, session_desc) => {
+                            unimplemented!()
+                        }
+                        SignalMessageToServer::IceCandidate(remote_peer, candidate) => {
+                            unimplemented!()
+                        }
+                        _ => println!("Received a message from {}: {:?}", peer, msg),
+                    }
                 }
                 other => {
                     println!("Received a message which is not binary: {:?}", other);
