@@ -52,6 +52,19 @@ impl SignalServer {
         }
     }
 
+    async fn send_to(self: &Arc<Self>, remote_peer: Peer, message: SignalMessageToClient) -> Res<()> {
+        let opt_stream = {
+            let peer_streams = self.peer_streams.lock().unwrap();
+            peer_streams.get(&remote_peer).cloned()
+        };
+        if let Some(stream) = opt_stream {
+            let mut stream = stream.lock().await;
+            let bs = rmp_serde::to_vec(&message)?;
+            stream.send(Message::Binary(bs)).await?;
+        }
+        Ok(())
+    }
+
     async fn handle_connection(self: Arc<Self>, peer: SocketAddr, stream: TcpStream) -> Res<()> {
         let mut ws_stream = Arc::new(AsyncMutex::new(tokio_tungstenite::accept_async(stream).await?));
         let mut this_peer: Option<Peer> = None;
@@ -72,27 +85,11 @@ impl SignalServer {
                             }
                             SignalMessageToServer::SessionDescription(remote_peer, session_desc) => {
                                 let msg = SignalMessageToClient::SessionDescription(this_peer.ok_or(anyhow!("must set peer first"))?, session_desc);
-                                let opt_stream = {
-                                    let peer_streams = self.peer_streams.lock().unwrap();
-                                    peer_streams.get(&remote_peer).cloned()
-                                };
-                                if let Some(stream) = opt_stream {
-                                    let mut stream = stream.lock().await;
-                                    let bs = rmp_serde::to_vec(&msg)?;
-                                    stream.send(Message::Binary(bs)).await?;
-                                }
+                                self.send_to(remote_peer, msg).await?;
                             }
                             SignalMessageToServer::IceCandidate(remote_peer, candidate) => {
                                 let msg = SignalMessageToClient::IceCandidate(this_peer.ok_or(anyhow!("must set peer first"))?, candidate);
-                                let opt_stream = {
-                                    let peer_streams = self.peer_streams.lock().unwrap();
-                                    peer_streams.get(&remote_peer).cloned()
-                                };
-                                if let Some(stream) = opt_stream {
-                                    let mut stream = stream.lock().await;
-                                    let bs = rmp_serde::to_vec(&msg)?;
-                                    stream.send(Message::Binary(bs)).await?;
-                                }
+                                self.send_to(remote_peer, msg).await?;
                             }
                             _ => println!("Received a message from {}: {:?}", peer, msg),
                         }
