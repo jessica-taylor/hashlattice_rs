@@ -65,7 +65,7 @@ impl SignalServer {
         Ok(())
     }
 
-    async fn handle_connection(self: Arc<Self>, peer: SocketAddr, stream: TcpStream) -> Res<()> {
+    async fn handle_connection(self: &Arc<Self>, peer: SocketAddr, stream: TcpStream) -> Res<()> {
         let mut ws_stream = Arc::new(AsyncMutex::new(tokio_tungstenite::accept_async(stream).await?));
         let mut this_peer: Option<Peer> = None;
         loop {
