@@ -1,3 +1,4 @@
+use core::mem::drop;
 use std::net::SocketAddr;
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -52,26 +53,32 @@ impl SignalServer {
 
     async fn handle_connection(self: Arc<Self>, peer: SocketAddr, stream: TcpStream) -> Res<()> {
         let mut ws_stream = Arc::new(AsyncMutex::new(tokio_tungstenite::accept_async(stream).await?));
-        while let Some(msg) = ws_stream.lock().await.next().await {
-            match msg? {
-                Message::Binary(bs) => {
-                    let msg: SignalMessageToServer = rmp_serde::from_slice(&bs)?;
-                    match msg {
-                        SignalMessageToServer::SetPeer(this_peer) => {
-                            let mut peer_streams = self.peer_streams.lock().unwrap();
-                            peer_streams.insert(this_peer, ws_stream.clone());
+        loop {
+            let mut stream = ws_stream.lock().await;
+            let opt_msg = stream.next().await;
+            drop(stream);
+            match opt_msg {
+                None => return Ok(()),
+                Some(msg) => match msg? {
+                    Message::Binary(bs) => {
+                        let msg: SignalMessageToServer = rmp_serde::from_slice(&bs)?;
+                        match msg {
+                            SignalMessageToServer::SetPeer(this_peer) => {
+                                let mut peer_streams = self.peer_streams.lock().unwrap();
+                                peer_streams.insert(this_peer, ws_stream.clone());
+                            }
+                            SignalMessageToServer::SessionDescription(remote_peer, session_desc) => {
+                                unimplemented!()
+                            }
+                            SignalMessageToServer::IceCandidate(remote_peer, candidate) => {
+                                unimplemented!()
+                            }
+                            _ => println!("Received a message from {}: {:?}", peer, msg),
                         }
-                        SignalMessageToServer::SessionDescription(remote_peer, session_desc) => {
-                            unimplemented!()
-                        }
-                        SignalMessageToServer::IceCandidate(remote_peer, candidate) => {
-                            unimplemented!()
-                        }
-                        _ => println!("Received a message from {}: {:?}", peer, msg),
                     }
-                }
-                other => {
-                    println!("Received a message which is not binary: {:?}", other);
+                    other => {
+                        println!("Received a message which is not binary: {:?}", other);
+                    }
                 }
             }
         }
