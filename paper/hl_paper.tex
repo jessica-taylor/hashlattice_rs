@@ -225,7 +225,7 @@
       \newcommand{\latticecomputationlookup}{\ensuremath{\mathsf{lattice\_computation\_lookup}}}
 
       \begin{itemize}
-        \item $\latticelookup : \mathrm{Semilattice} \to \mathrm{Option}(SemilatticeValue)$: Given a semilattice, return the corresponding maximum semilattice value, or $\mathrm{None}$ if there is no known valid value.
+        \item $\latticelookup : \mathrm{Semilattice} \to \mathrm{Option}(\mathrm{SemilatticeValue})$: Given a semilattice, return the corresponding maximum semilattice value, or $\mathrm{None}$ if there is no known valid value.
         \item $\latticecomputationlookup : \mathrm{LatticeComputation} \partialto \mathrm{LatticeComputationValue}$: Given a semilattice computation, return the corresponding result. Throws an error if evaluating the computation throws an error.
       \end{itemize}
 
@@ -255,9 +255,40 @@
       \begin{itemize}
         \item $\checkelem : \mathrm{ImmutableLatticeContext} \times \mathrm{Semilattice} \times \mathrm{SemilatticeValue} \partialto \mathrm{Unit}$: Given a semilattice and a semilattice value, throw an error if the value is not an element of the semilattice. This may query an immutable lattice context.
         \item $\join : \mathrm{MutableLatticeContext} \times \mathrm{Semilattice} \times \mathrm{SemilatticeValue} \times \mathrm{SemilatticeValue} \partialto \mathrm{SemilatticeValue}$: Given a semilattice and two semilattice values, return the join of the two values. This may query and update a mutable lattice context.
-        \item $\transport : \mathrm{ImmutableLatticeContext} \times \mathrm{MutableLatticeContext} \times \mathrm{Semilattice} \times \mathrm{SemilatticeValue} \partialto \mathrm{Option}{\mathrm{SemilatticeValue}}$: Given a semilattice and a semilattice value, transport it from a value in the dependent semilattice in the context of the first context to a value in the dependent semilattice in the context of the second context, or $\mathrm{None}$ if there is no such translation.
+        \item $\transport : \mathrm{ImmutableLatticeContext} \times \mathrm{MutableLatticeContext} \times \mathrm{Semilattice} \times \mathrm{SemilatticeValue} \partialto \mathrm{Option}(\mathrm{SemilatticeValue})$: Given a semilattice and a semilattice value, transport it from a value in the dependent semilattice in the context of the first context to a value in the dependent semilattice in the context of the second context, or $\mathrm{None}$ if there is no such translation. For non-dependent semilattices, this may simply return the original value, as no transport is necessary.
         \item $\evallatticecomputation : \mathrm{MutableLatticeContext} \times \mathrm{SemilatticeComputation} \partialto \mathrm{SemilatticeComputationValue}$: Given a semilattice computation, return the corresponding result. This may query and update a mutable lattice context.
       \end{itemize}
+  
+  \section{HashLattice databases}
 
+    A HashLattice database stores four types of values in its database: data values, data computations, semilattice values, and semilattice computations. The database tracks dependencies between these different values. Data computations may depend on data values and data computations; semilattice values and semilattice computation values may depend on values of any type.
+
+    Dependencies are defined as follows:
+    \begin{itemize}
+      \item A data computation depends on a data value if the corresponding \evaldatacomputation function calls \hashlookup for the data value's hash code.
+      \item A data computation depends on another data computation if the corresponding \evaldatacomputation function calls \datacomputationlookup for the other data computation.
+      \item A semilattice value depends on a data value if the corresponding \checkelem function calls \hashlookup for the data value's hash code.
+      \item A semilattice value depends on a data computation if the corresponding \checkelem function calls \datacomputationlookup for the data computation.
+      \item A semilattice value depends on another semilattice value if the corresponding \checkelem function calls \latticelookup for the other semilattice value's semilattice.
+      \item A semilattice value depends on a semilattice computation if the corresponding \checkelem function calls \latticecomputationlookup for the semilattice computation.
+      \item A semilattice computation depends on a data value if the corresponding \evallatticecomputation function calls \hashlookup for the data value's hash code.
+      \item A semilattice computation depends on a data computation if the corresponding \evallatticecomputation function calls \datacomputationlookup for the data computation.
+      \item A semilattice computation depends on a semilattice value if the corresponding \evallatticecomputation function calls \latticelookup for the semilattice value's semilattice.
+      \item A semilattice computation depends on another semilattice computation if the corresponding \evallatticecomputation function calls \latticecomputationlookup for the other semilattice computation.
+    \end{itemize}
+
+    In general, results of computations are cached, so data computations are not re-run (unless the cache is cleared), and semilattice computations are only re-run if their dependencies have changed.
+
+    For semilattice values and semilattice computations, the database stores not only the value, but also a directed acyclic graph Merkle tree of their dependencies on semilattices or semilattice computations. This enables synchronization between different databases, since it is possible to check if any dependencies differ before joining the values. Synchronization proceeds recursively; within the \join call that merges two semilattice values, the \latticelookup and \latticecomputationlookup functions recursively compute a merged result from the two databases, using the Merkle trees as a frozen pointer to the relevant subset of each database at the time of the merge.
+
+    When one database has a value for a given semilattice and the other doesn't, the only value is used as the join. Conceptually, we may extend a semilattice over $L$ to a semilattice over $\mathrm{Option}(L)$ as follows:
+
+    \begin{itemize}
+      \item $\mathrm{None} \vee y = y$
+      \item $x \vee \mathrm{None} = x$
+      \item $\mathrm{Some}(x) \vee \mathrm{Some}(y) = \mathrm{Some}(x \vee y)$
+    \end{itemize}
+
+    This interpretation of option semilattices makes more sense of why the \transport function returns an option: a value in an original semilattice may be transported to $\mathrm{None}$ in the updated semilattice.
 
 \end{document}
