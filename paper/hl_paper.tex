@@ -1,0 +1,263 @@
+
+\documentclass{article}
+
+\usepackage{amsthm}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}{Lemma}
+
+\title{Hashlattice: A distributed system for monotonic peer-to-peer synchronization}
+\author{Jessica Taylor}
+% Astra???
+\date{\today}
+
+\begin{document}
+  \maketitle
+  
+  \section{Introduction}
+    The Internet, while it consists of a set of interoperable protocols, is in practice quite centralized. People spend most of their time on large websites that serve many users and which must be trusted to properly handle user data. This enables censorship and introduces security risks.
+
+    Peer-to-peer (P2P) systems are an alternative to centralized systems. In a P2P system, users are connected to each other directly, and there is no central authority. This allows users to communicate without trusting a third party. However, P2P systems are difficult to build because they must be able to handle a large number of users while preserving security and robustness.
+
+    Prior art for P2P systems includes BitTorrent, a file sharing system, IPFS, a file indexing and transfer protocol, and Bitcoin, a cryptocurrency. BitTorrent magnet links and IPFS share the property that data is indexed by its hash code. This enables a user not possessing the data to download it from the network and verify its correctness. However, hash codes are static, so applications with state changes cannot straightforwardly be implemented on these protocols. Bitcoin implements state changes by having every ``full node'' download and check every transaction to ensure its correctness, computing the new state from the previous state and any ensuing transactions. However, Bitcoin is not scalable because of the requirement for every full node to download and check every transaction. If $n$ users each make $k$ transactions each, then the total bandwidth and data storage requirement is at least $O(kn^2)$. As a result, Bitcoin has limited throughput, high transaction fees, and requires a large amount of bandwidth and disk space to run.
+
+    We propose a new P2P system, HashLattice, which combines the hash code indexed data storage capabilities of IPFS with state changes using algebraic semilattices. This system allows users to scalably upload new data to the network and update it over time in a way that can be verified by other users.
+
+    Prior work includes conflict-free replicated data types (CRDTs), a class of data structure that allows multiple servers cooperating to run the same application to independently modify the data and resolve their differing updates. CRDTs have been used in industry, but have not to our knowledge been used to implement a P2P Internet.
+
+  \section{Notation}
+
+    We use $\mathrm{Unit}$ to indicate the set containinly only one value, $()$.
+
+    We use $\mathrm{Option}(S)$ for some set $S$ to indicate the sum set $\{ \mathrm{Some}(s) ~ | ~ s \in S \} \cup \mathrm{None}\}$, as in Rust.
+
+    \newcommand{\partialto}{\hookrightarrow}
+
+    We use $A \partialto B$ to indicate the type of partial functions from $A$ to $B$. Conceptually, these are functions that may either return a result or throw an error.
+
+  \section{Data and data computations}
+
+    As in IPFS, raw data is stored in the network indexed by its hash code. This enables users to download data from the network and verify its correctness. \emph{Data computations} consist of code that either produces either a fixed, immutable value or an error. These computations may query data by their hash code, and my also request the result of other data computations. The results of data computations are in general cached (due to their immutability), enabling multiple data computations to re-use the results of a given data computation without running it twice.
+
+  \section{Semilattices}
+
+    A \emph{semilattice} is a set $L$ with a binary operation $\vee$ (``join'') that is commutative ($x \vee y = y \vee x$), associative ($(x \vee y) \vee z = x \vee (y \vee z)$), and idempotent ($x \vee x = x$). (This is in standard literature called a ``join semilattice''; we do not consider the dual ``meet semilattices'' and so use ``semilattice'' to mean ``join semilattice'' henceforth.)
+
+    We write $x \leq y$ to mean $y = x \vee y$. Note that if $x \leq y$ and $y \leq x$, then $x = x \vee y = y$. Additionally, $x \leq x$, and if $x \leq y$ and $y \leq z$, then $z = z \vee y = z \vee y \vee x \geq x$. Accordingly, $\leq$ forms a partial order.
+
+    In databases, lattices are useful for defining a notion of a most updated value. For example, with $L$ as a set of sets of messages and $\vee = \cup$, the lattice represents sets of messages that are updated to include more messages as they come in.
+
+    Any total order corresponds to a semilattice, with $x \vee y = \mathrm{max}(x, y)$. For example, a total order could be created over timestamped messages signed by a particular public key, where later messages are considered greater in the order. The corresponding semilattice will select the latest signed message by this public key that is available on the network. This enables users to issue ``status updates'' that are distributed to other users, such that the other users can be aware of the original user's latest status update, corresponding to their current status.
+
+    \newcommand{\checkelem}{\ensuremath{\mathsf{check\_elem}}}
+    \newcommand{\join}{\ensuremath{\mathsf{join}}}
+
+    A semilattice is specified in HashLattice by two functions. The first, \checkelem, takes an element $x$ and produces an error if the element is not a member of the semilattice. The second, \join, takes two valid elements $x$ and $y$ and produces the join $x \vee y$. These functions may look up pieces of data by their hash codes and call data computations.
+
+    In a P2P network context, each node stores data, data computation results, and maximum values of semilattices. They share with each other data and semilattice maxima. They don't share the results of data computations, since these are in general unverifiable without downloading the correspoding data and running the corresponding computation.
+
+  \section{Dependent semilattices}
+
+    As an extension to this system, we may also enable semilattices to depend on the maximum values of other semilattices. While this introduces additional complexity, this feature enables greater composability, as it enables P2P applications running on HashLattice may query the semilattice data of other applications.
+
+    \subsection{Category theoretic interpretation of semilattices}
+
+      We discuss category theoretic language for semilattices to derive a notion of dependency between semilattices. After this subsection, we drop the category-theoretic language, so it is not strictly necessary to understand category theory to understand the result, although it helps with the derivation.
+
+      A semilattice can be interpreted as a category whose objects are the members of $L$, and where a morphism exists between $x$ and $y$ if and only if $x \leq y$; in this case there must be exactly one morphism of this form denoted $x \leq y$. To be a semilattice, the category must have coproducts (corresponding to joins).
+
+      Semilattices form a category $\mathrm{Semilattice}$.  The objects are semilattices and the morphisms are join-preserving functors between semilattices. A functor between two semilattices $L_1, L_2$ is, by the definition of functor, a function $f: L_1 \rightarrow L_2$ mapping elements of $L_1$ to elements of $L_2$, such that if $x \leq y$, then $f(x) \leq f(y)$. The functor preserves joins if for $x_1 : L_1, x_2 : L_2$, $f(x_1 \vee x_2) = f(x_1) \vee f(x_2)$. The $\mathrm{Semilattice}$ category has products in the obvious way.
+
+      Note that any join-preserving function $f : L_1 \rightarrow L_2$ is automatically a functor: if $x \leq y$, then $f(x) \leq f(x) \vee f(y) = f(x \vee y) = f(y)$. 
+
+      A semilattice fibration on a semilattice $L$ is a functor $g : L \rightarrow \mathrm{Semilattice}$, which assigns to each element $x$ of $L$ a semilattice $g(x)$, and assigns to each ordering $x \leq y$ a semilattice morphism (i.e. join-preserving functor) $g(x \leq y)$ from $g(x)$ to $g(y)$.
+
+      The total space $\mathrm{SemiLatTot}(L, g)$ is a preorder whose elements consist of pairs $(x, x')$ where $x : L$ and $x' : g(x)$. We consider $(x, x') \leq (y, y')$ when $x \leq y$ and $g(x \leq y)(x') \leq y'$. Consider two elements of the total space, $(x, x'), (y, y')$. Their join is defined as $$(x, x') \vee (y, y') := (x \vee y', g(x \leq x \vee y)(x') \vee g(y \leq x \vee y)(y'))$$. 
+
+      \begin{theorem}
+        The total space $\mathrm{SemiLatTot}(L, g)$ of a semilattice $L$ and a semilattice fibration $g$ is a semilattice.
+      \end{theorem}
+      \begin{proof}
+        We must show that this join is commutative, associative, and idempotent.
+        \begin{itemize}
+          \item \emph{Commutative}:
+            \begin{align*}
+              (x, x') \vee (y, y') &= \left(x \vee y, g(x \leq x \vee y)(x') \vee g(y \leq x \vee y)(y')\right) \\
+              &= \left(y \vee x, g(y \leq y \vee x)(y') \vee g(x \leq y \vee x)(x')\right) \\
+              &= (y, y') \vee (x, x')
+            \end{align*}
+          \item \emph{Associative}:
+            \begin{align*} &((x, x') \vee (y, y')) \vee (z, z')  \\
+              =& \left(x \vee y \vee z, g(x \vee y \leq x \vee y \vee z)(g(x \leq x \vee y)(x') \vee g(y \leq x \vee y)(y')) \vee g(z \leq x \vee y \vee z)(z')\right) \\
+              =& \left(x \vee y \vee z, g(x \leq x \vee y \vee z)(x') \vee g(y \leq x \vee y \vee z)(y') \vee g(z \leq x \vee y \vee z)(z')\right) \\
+              =& \left(x \vee y \vee z, g(x \leq x \vee y \vee z)(x') \vee g(y \vee z \leq x \vee y \vee z)(g(y \leq y \vee z)(y') \vee g(z \leq y \vee z)(z'))\right) \\
+              =& (x, x') \vee ((y, y') \vee (z, z'))
+            \end{align*}
+          \item \emph{Idempotent}: 
+            \begin{align*}
+              (x, x') \vee (x, x') &= \left(x \vee x, g(x \leq x \vee x)(x') \vee g(x \leq x \vee x)(x')\right) \\
+              &= \left(x, g(x \leq x)(x')\right) \\
+              &= (x, x')
+            \end{align*}
+        \end{itemize}
+      \end{proof}
+
+      Note that the projection $\pi_1 : \mathrm{SemiLatTot}(L, g) \rightarrow L$ is a semilattice morphism.
+
+    \subsection{De-categorizing semilattice fibrations}
+
+      To define a semilattice fibration more directly, we can remove the category-theoretic language, replacing category-theoretic entities with their definitions.
+
+      A semilattice fibration consists of a function $l : L \rightarrow \mathrm{Semilattice}$, assigning to each element of $L$ a semilattice, and a function $t : \Pi (x, y : L, x \leq y) l(x) \rightarrow l(y)$ (a ``transport function''), satisfying:
+
+      \begin{itemize}
+        \item For any $x : L, x' : l(x)$: $$t(x, x) = \mathsf{id}$$.
+        \item For any $x, y, z : L$ such that $x \leq y \leq z$, and $x' : l(x)$: $$t(y, z) \circ t(x, y) = t(x, z)$$.
+        \item For any $x, y : L$ such that $x \leq y$, and $x'_1, x'_2 : l(x)$: $$t(x, y)(x'_1 \vee x'_2) = t(x, y)(x'_1) \vee t(x, y)(x'_2)$$.
+      \end{itemize}
+
+      We write $\mathrm{SemiLatFib}(L)$ for the set of semilattice fibrations on $L$.
+
+      This is equivalent to the above category-theoretic definition. $l$ corresponds to the semilattice fibration functor's action on objects, and $t$ to its action on morphisms (itself a functor). The first two conditions ensure that $(l, t)$ is a functor, while the third ensures that $t(x, y, \cdot)$ is a semilattice morphism.
+
+      Intuitively, the first condition states that transporting a value $x'$ when not changing its dependency $x$ doesn't change $x'$; the second condition states dependency updates aren't path-dependent; and the third states transports distribute over joins.
+
+      The total space $\mathrm{SemiLatTot}(L, l, t)$ is then a semilattice whose elements are pairs $(x, x')$ where $x : L$ and $x' : l(x)$. The join is defined as $(x, x') \vee (y, y') := (x \vee y, t(x, x \vee y)(x') \vee t(y, x \vee y)(y'))$. This is equivalent to the above category-theoretic definition, proving it is a semilattice.
+
+    \subsection{Composing semilattice fibrations}
+
+      Semilattice fibrations can be composed iteratively. Composing finitely is straightforward, while omposing infinitely requires more work.
+
+      Suppose we have:
+
+      \begin{align*}
+        L_0 &: \mathrm{Semilattice} & \\
+        (l_n, t_n) &: \mathrm{SemiLatFib}(L_{n-1}) & \text{ for natural $n \geq 1$ } \\
+        L_n &:= \mathrm{SemiLatTot}(L_{n-1}, l_n, t_n)    & \text{ for natural $n \geq 1$ }
+      \end{align*}
+
+      We now wish to define $L_\omega$ to be a semilattice that is, morally speaking, the limit of $L_n$. This lattice's elements are infinite lists $x_1, x_2, \ldots$ satisfying $x_n : l_n(x_{<n})$ for each natural $n \geq 1$, where $x_{<n} = x_1, \ldots, x_{n-1} : L_{n-1}$. The joins are defined as follows:
+
+      $$(\overline{x} \vee \overline{y})_n := t_n(x_{<n}, x_{<n} \vee y_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n})} t_n(y_{<n}, x_{<n} \vee y_{<n})(y_n)$$
+
+      \begin{theorem}
+        $L_{\omega}$ is a semilattice.
+      \end{theorem}
+      \begin{proof}
+
+        To verify that $L_\omega$ is a semilattice, we must verify three properties:
+        \begin{itemize}
+          \item \emph{Commutativity}:
+            \begin{align*}
+              (\overline{x} \vee \overline{y})_n
+              &= t_n(x_{<n}, x_{<n} \vee y_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n})} t_n(y_{<n}, x_{<n} \vee y_{<n})(y_n) \\
+              &= t_n(y_{<n}, y_{<n} \vee x_{<n})(y_n) \vee_{l_n(y_{<n} \vee x_{<n})} t_n(x_{<n}, y_{<n} \vee x_{<n})(x_n) \\
+              &= (\overline{y} \vee \overline{x})_n
+            \end{align*}
+          \item \emph{Associativity}:
+            \begin{align*}
+              & ((\overline{x} \vee \overline{y}) \vee \overline{z})_n \\
+              =& t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})((\overline{x} \vee \overline{y})_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})}
+                 t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(z_n)  \\
+              =& t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(
+                          t_n(x_{<n}, x_{<n} \vee y_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n})}
+                          t_n(y_{<n}, x_{<n} \vee y_{<n})(y_n)) \\
+               &\vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(z_n)  \\
+              =& (t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}) \circ t_n(x_{<n}, x_{<n} \vee y_{<n}))(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & (t_n(x_{<n} \vee y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}) \circ t_n(y_{<n}, x_{<n} \vee y_{<n}))(y_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(z_n)  \\
+              =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(y_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(y_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(z_n)  \\
+              =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & (t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}) \circ t_n(y_{<n}, y_{<n} \vee z_{<n}))(y_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & (t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n}) \circ t_n(z_{<n}, y_{<n} \vee z_{<n}))(z_n)  \\
+              =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(
+                          t_n(y_{<n}, y_{<n} \vee z_{<n})(y_n) \vee_{l_n(y_{<n} \vee z_{<n})}
+                          t_n(z_{<n}, y_{<n} \vee z_{<n})(z_n)) \\
+              =& t_n(x_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})(x_n) \vee_{l_n(x_{<n} \vee y_{<n} \vee z_{<n})} \\
+               & t_n(y_{<n} \vee z_{<n}, x_{<n} \vee y_{<n} \vee z_{<n})((\overline{y} \vee \overline{z})_n) \\
+              =& (\overline{x} \vee (\overline{y} \vee \overline{z}))_n
+            \end{align*}
+          \item \emph{Idempotence}:
+            \begin{align*}
+              (\overline{x} \vee \overline{x})_n &= t_n(x_{<n}, x_{<n} \vee x_{<n})(x_n) \vee_{l_n(x_{<n} \vee x_{<n}))} t_n(x_{<n}, x_{<n} \vee x_{<n})(x_n) \\
+              &= t_n(x_{<n}, x_{<n})(x_n) \\
+              &= x_n
+            \end{align*}
+        \end{itemize}
+      \end{proof}
+
+      We can further stack to higher ordinals than $\omega$. Let $n_u \geq 1$ be the number of universes. Assume we have:
+
+      \begin{align*}
+        L_{0, 0} &: \mathrm{Semilattice} & \\
+        (l_{u, n}, t_{u, n}) &: \mathrm{SemiLatFib}(L_{u, n-1}) & \text{for natural $0 \leq u < n_u$, $n \geq 1$ } \\
+        L_{u, n} &:= \mathrm{SemiLatTot}(L_{u, n-1}, l_{u, n}, t_{u, n})    & \text{ for natural $0 \leq u < n_u$, $n \geq 1$ } \\
+        L_{u, 0} &:= L_{u-1, \omega} & \text{ for natural $1 \leq u < n_u$ }
+      \end{align*}
+
+      where $L_{u, \omega}$ is constructed the same way as $L_{\omega}$ above, as the limit of $L_{u, n}$ as $n$ approaches $\infty$. Inductively, each $L_{u, n}$ is a semilattice for naturals $0 \leq u < n_u$ and $n \geq 0$; this lattice's ordinal corresponds to $u \omega + n$. While in theory it may be possible to reach higher ordinals $\omega^2$ and beyond, we consider this beyond the scope of this work.
+
+  \section{HashLattice libraries}
+
+    Using the above theory of dependent semilattices, we may specify what a HashLattice library consists of. HashLattice libraries provide definitions of data computations, semilattices, and semilattice computations. Data computations may depend on data and data computations; semilattices and semilattice computations may depend on data, data computations, semilattice values, and semilattice computations.
+
+    \subsection{Contexts}
+
+      HashLattice library functions depend on \emph{contexts}, which differ depending on the type of library function specified.
+
+      A \emph{data computation context} provides the following methods:
+
+      \newcommand{\hashlookup}{\ensuremath{\mathsf{hash\_lookup}}}
+      \newcommand{\datacomputationlookup}{\ensuremath{\mathsf{data\_computation\_lookup}}}
+
+      \begin{itemize}
+        \item $\hashlookup : \mathrm{HashCode} \partialto \mathrm{Bytes}$: Given a hash code, return the corresponding data value. Throws an error if the data value with this hash code is unavailable.
+        \item $\datacomputationlookup : \mathrm{DataComputation} \partialto \mathrm{DataComputationValue}$: Given a data computation, return the corresponding data value. Throws an error if evaluating the computation throws an error.
+      \end{itemize}
+
+      A \emph{immutable lattice context} provides the above methods and the following additional methods:
+
+      \newcommand{\latticelookup}{\ensuremath{\mathsf{lattice\_lookup}}}
+      \newcommand{\latticecomputationlookup}{\ensuremath{\mathsf{lattice\_computation\_lookup}}}
+
+      \begin{itemize}
+        \item $\latticelookup : \mathrm{Semilattice} \to \mathrm{Option}(SemilatticeValue)$: Given a semilattice, return the corresponding maximum semilattice value, or $\mathrm{None}$ if there is no known valid value.
+        \item $\latticecomputationlookup : \mathrm{LatticeComputation} \partialto \mathrm{LatticeComputationValue}$: Given a semilattice computation, return the corresponding result. Throws an error if evaluating the computation throws an error.
+      \end{itemize}
+
+      A \emph{mutable lattice context} provides all the above methods and the following additional method:
+
+      \newcommand{\hashput}{\ensuremath{\mathsf{hash\_put}}}
+
+      \begin{itemize}
+        \item $\hashput : \mathrm{Bytes} \to \mathrm{HashCode}$: Stores a given data value in the database, returning the corresponding hash code.
+      \end{itemize}
+
+    \subsection{Libraries}
+
+      A \emph{data computation library} provides the following methods:
+
+      \newcommand{\evaldatacomputation}{\ensuremath{\mathsf{eval\_data\_computation}}}
+
+      \begin{itemize}
+        \item $\evaldatacomputation : \mathrm{DataComputationContext} \times \mathrm{DataComputation} \partialto \mathrm{DataComputationValue}$: Given a data computation, return the corresponding data value. This may query a data computation context.
+      \end{itemize}
+
+      A \emph{semilattice library} provides the following methods:
+
+      \newcommand{\transport}{\ensuremath{\mathsf{transport}}}
+      \newcommand{\evallatticecomputation}{\ensuremath{\mathsf{eval\_lattice\_computation}}}
+
+      \begin{itemize}
+        \item $\checkelem : \mathrm{ImmutableLatticeContext} \times \mathrm{Semilattice} \times \mathrm{SemilatticeValue} \partialto \mathrm{Unit}$: Given a semilattice and a semilattice value, throw an error if the value is not an element of the semilattice. This may query an immutable lattice context.
+        \item $\join : \mathrm{MutableLatticeContext} \times \mathrm{Semilattice} \times \mathrm{SemilatticeValue} \times \mathrm{SemilatticeValue} \partialto \mathrm{SemilatticeValue}$: Given a semilattice and two semilattice values, return the join of the two values. This may query and update a mutable lattice context.
+        \item $\transport : \mathrm{ImmutableLatticeContext} \times \mathrm{MutableLatticeContext} \times \mathrm{Semilattice} \times \mathrm{SemilatticeValue} \partialto \mathrm{Option}{\mathrm{SemilatticeValue}}$: Given a semilattice and a semilattice value, transport it from a value in the dependent semilattice in the context of the first context to a value in the dependent semilattice in the context of the second context, or $\mathrm{None}$ if there is no such translation.
+        \item $\evallatticecomputation : \mathrm{MutableLatticeContext} \times \mathrm{SemilatticeComputation} \partialto \mathrm{SemilatticeComputationValue}$: Given a semilattice computation, return the corresponding result. This may query and update a mutable lattice context.
+      \end{itemize}
+
+
+\end{document}
