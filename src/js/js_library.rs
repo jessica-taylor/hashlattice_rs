@@ -310,11 +310,11 @@ impl LatticeLibrary<JsMapping, JsMapping, JsMapping> for JsLibrary {
         }
     }
 
-    async fn join(self: Arc<Self>, key: &JsValue, a: &JsValue, b: &JsValue, ctx: Arc<dyn LatticeMutContext<JsMapping, JsMapping, JsMapping>>) -> Res<Option<JsValue>> {
+    async fn join(self: Arc<Self>, key: &JsValue, a: &JsValue, b: &JsValue, ctx: Arc<dyn LatticeMutContext<JsMapping, JsMapping, JsMapping>>) -> Res<JsValue> {
         let dyn_ctx = DynContext::LatticeMut(ctx);
         let ctxid = self.get_ctx_id(&dyn_ctx);
         if let LibraryResult::Join(result) = self.do_query(LibraryQuery::Join(key.0.clone(), a.0.clone(), b.0.clone(), ctxid)).await? {
-            Ok(result.map(JsValue))
+            Ok(JsValue(result))
         } else {
             bail!("Unexpected result from join")
         }

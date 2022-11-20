@@ -64,7 +64,7 @@ pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static,
         bail!("check_elem not implemented")
     }
 
-    async fn join(self: Arc<Self>, _key: &L::Key, _a: &L::Value, _b: &L::Value, _ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<Option<L::Value>> {
+    async fn join(self: Arc<Self>, _key: &L::Key, _a: &L::Value, _b: &L::Value, _ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<L::Value> {
         bail!("join not implemented")
     }
 

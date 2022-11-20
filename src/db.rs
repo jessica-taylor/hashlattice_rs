@@ -442,12 +442,7 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
                 if tr_other == store_merkle.value {
                     return Ok(Some(store_merkle_hash));
                 }
-                let joined = self.lat_lib.clone().join(key, &store_merkle.value, &tr_other, self.clone()).await?;
-                if joined.is_none() {
-                    // this probably shouldn't happen...
-                    return Ok(Some(store_merkle_hash));
-                }
-                joined.unwrap()
+                self.lat_lib.clone().join(key, &store_merkle.value, &tr_other, self.clone()).await?
             }
         };
         let lat_lib = self.lat_lib.clone();

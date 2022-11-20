@@ -40,7 +40,7 @@ pub enum LibraryQuery {
 pub enum LibraryResult {
     EvalComputation(JsValue),
     CheckElem,
-    Join(Option<JsValue>),
+    Join(JsValue),
     Transport(Option<JsValue>),
     EvalLatComputation(JsValue),
 }
@@ -273,7 +273,7 @@ impl RuntimeState {
                                 self.register_call_function(query_id, "hash_put", vec![key, value, JsValue::from(ctxid)], |_| Ok(LibraryResult::CheckElem));
                             },
                             LibraryQuery::Join(key, value1, value2, ctxid) => {
-                                self.register_call_function(query_id, "lattice_join", vec![key, value1, value2, JsValue::from(ctxid)], |res| Ok(LibraryResult::Join(js_to_option(res)?)));
+                                self.register_call_function(query_id, "lattice_join", vec![key, value1, value2, JsValue::from(ctxid)], |res| Ok(LibraryResult::Join(res)));
                             },
                             LibraryQuery::Transport(key, value, old_ctxid, new_ctxid) => {
                                 self.register_call_function(query_id, "transport", vec![key, value, JsValue::from(old_ctxid), JsValue::from(new_ctxid)], |res| Ok(LibraryResult::Transport(js_to_option(res)?)));
