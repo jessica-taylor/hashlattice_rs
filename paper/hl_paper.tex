@@ -4,6 +4,7 @@
 \usepackage{amsthm}
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{xspace}
 \newtheorem{theorem}{Theorem}
 \newtheorem{lemma}{Lemma}
 
@@ -13,6 +14,18 @@
 \date{\today}
 
 \begin{document}
+  \newcommand{\checkelem}{\ensuremath{\mathsf{check\_elem}}}
+  \newcommand{\join}{\ensuremath{\mathsf{join}}}
+  \newcommand{\partialto}{\hookrightarrow}
+  \newcommand{\hashlookup}{\ensuremath{\mathsf{hash\_lookup}}}
+  \newcommand{\datacomputationlookup}{\ensuremath{\mathsf{data\_computation\_lookup}}}
+  \newcommand{\latticelookup}{\ensuremath{\mathsf{lattice\_lookup}}}
+  \newcommand{\latticecomputationlookup}{\ensuremath{\mathsf{lattice\_computation\_lookup}}}
+  \newcommand{\hashput}{\ensuremath{\mathsf{hash\_put}}}
+  \newcommand{\evaldatacomputation}{\ensuremath{\mathsf{eval\_data\_computation}}}
+  \newcommand{\transport}{\ensuremath{\mathsf{transport}}}
+  \newcommand{\evallatticecomputation}{\ensuremath{\mathsf{eval\_lattice\_computation}}}
+
   \maketitle
   
   \section{Introduction}
@@ -32,7 +45,6 @@
 
     We use $\mathrm{Option}(S)$ for some set $S$ to indicate the sum set $\{ \mathrm{Some}(s) ~ | ~ s \in S \} \cup \mathrm{None}\}$, as in Rust.
 
-    \newcommand{\partialto}{\hookrightarrow}
 
     We use $A \partialto B$ to indicate the type of partial functions from $A$ to $B$. Conceptually, these are functions that may either return a result or throw an error.
 
@@ -50,8 +62,6 @@
 
     Any total order corresponds to a semilattice, with $x \vee y = \mathrm{max}(x, y)$. For example, a total order could be created over timestamped messages signed by a particular public key, where later messages are considered greater in the order. The corresponding semilattice will select the latest signed message by this public key that is available on the network. This enables users to issue ``status updates'' that are distributed to other users, such that the other users can be aware of the original user's latest status update, corresponding to their current status.
 
-    \newcommand{\checkelem}{\ensuremath{\mathsf{check\_elem}}}
-    \newcommand{\join}{\ensuremath{\mathsf{join}}}
 
     A semilattice is specified in HashLattice by two functions. The first, \checkelem, takes an element $x$ and produces an error if the element is not a member of the semilattice. The second, \join, takes two valid elements $x$ and $y$ and produces the join $x \vee y$. These functions may look up pieces of data by their hash codes and call data computations.
 
@@ -211,8 +221,6 @@
 
       A \emph{data computation context} provides the following methods:
 
-      \newcommand{\hashlookup}{\ensuremath{\mathsf{hash\_lookup}}}
-      \newcommand{\datacomputationlookup}{\ensuremath{\mathsf{data\_computation\_lookup}}}
 
       \begin{itemize}
         \item $\hashlookup : \mathrm{HashCode} \partialto \mathrm{Bytes}$: Given a hash code, return the corresponding data value. Throws an error if the data value with this hash code is unavailable.
@@ -221,8 +229,6 @@
 
       A \emph{immutable lattice context} provides the above methods and the following additional methods:
 
-      \newcommand{\latticelookup}{\ensuremath{\mathsf{lattice\_lookup}}}
-      \newcommand{\latticecomputationlookup}{\ensuremath{\mathsf{lattice\_computation\_lookup}}}
 
       \begin{itemize}
         \item $\latticelookup : \mathrm{Semilattice} \to \mathrm{Option}(\mathrm{SemilatticeValue})$: Given a semilattice, return the corresponding maximum semilattice value, or $\mathrm{None}$ if there is no known valid value.
@@ -231,7 +237,6 @@
 
       A \emph{mutable lattice context} provides all the above methods and the following additional method:
 
-      \newcommand{\hashput}{\ensuremath{\mathsf{hash\_put}}}
 
       \begin{itemize}
         \item $\hashput : \mathrm{Bytes} \to \mathrm{HashCode}$: Stores a given data value in the database, returning the corresponding hash code.
@@ -241,7 +246,6 @@
 
       A \emph{data computation library} provides the following methods:
 
-      \newcommand{\evaldatacomputation}{\ensuremath{\mathsf{eval\_data\_computation}}}
 
       \begin{itemize}
         \item $\evaldatacomputation : \mathrm{DataComputationContext} \times \mathrm{DataComputation} \partialto \mathrm{DataComputationValue}$: Given a data computation, return the corresponding data value. This may query a data computation context.
@@ -249,8 +253,6 @@
 
       A \emph{semilattice library} provides the following methods:
 
-      \newcommand{\transport}{\ensuremath{\mathsf{transport}}}
-      \newcommand{\evallatticecomputation}{\ensuremath{\mathsf{eval\_lattice\_computation}}}
 
       \begin{itemize}
         \item $\checkelem : \mathrm{ImmutableLatticeContext} \times \mathrm{Semilattice} \times \mathrm{SemilatticeValue} \partialto \mathrm{Unit}$: Given a semilattice and a semilattice value, throw an error if the value is not an element of the semilattice. This may query an immutable lattice context.
@@ -265,21 +267,21 @@
 
     Dependencies are defined as follows:
     \begin{itemize}
-      \item A data computation depends on a data value if the corresponding \evaldatacomputation function calls \hashlookup for the data value's hash code.
-      \item A data computation depends on another data computation if the corresponding \evaldatacomputation function calls \datacomputationlookup for the other data computation.
-      \item A semilattice value depends on a data value if the corresponding \checkelem function calls \hashlookup for the data value's hash code.
-      \item A semilattice value depends on a data computation if the corresponding \checkelem function calls \datacomputationlookup for the data computation.
-      \item A semilattice value depends on another semilattice value if the corresponding \checkelem function calls \latticelookup for the other semilattice value's semilattice.
-      \item A semilattice value depends on a semilattice computation if the corresponding \checkelem function calls \latticecomputationlookup for the semilattice computation.
-      \item A semilattice computation depends on a data value if the corresponding \evallatticecomputation function calls \hashlookup for the data value's hash code.
-      \item A semilattice computation depends on a data computation if the corresponding \evallatticecomputation function calls \datacomputationlookup for the data computation.
-      \item A semilattice computation depends on a semilattice value if the corresponding \evallatticecomputation function calls \latticelookup for the semilattice value's semilattice.
-      \item A semilattice computation depends on another semilattice computation if the corresponding \evallatticecomputation function calls \latticecomputationlookup for the other semilattice computation.
+      \item A data computation depends on a data value if the corresponding \evaldatacomputation{} function calls \hashlookup{} for the data value's hash code.
+      \item A data computation depends on another data computation if the corresponding \evaldatacomputation{} function calls \datacomputationlookup{} for the other data computation.
+      \item A semilattice value depends on a data value if the corresponding \checkelem{} function calls \hashlookup{} for the data value's hash code.
+      \item A semilattice value depends on a data computation if the corresponding \checkelem{} function calls \datacomputationlookup{} for the data computation.
+      \item A semilattice value depends on another semilattice value if the corresponding \checkelem{} function calls \latticelookup{} for the other semilattice value's semilattice.
+      \item A semilattice value depends on a semilattice computation if the corresponding \checkelem{} function calls \latticecomputationlookup{} for the semilattice computation.
+      \item A semilattice computation depends on a data value if the corresponding \evallatticecomputation{} function calls \hashlookup{} for the data value's hash code.
+      \item A semilattice computation depends on a data computation if the corresponding \evallatticecomputation{} function calls \datacomputationlookup{} for the data computation.
+      \item A semilattice computation depends on a semilattice value if the corresponding \evallatticecomputation{} function calls \latticelookup{} for the semilattice value's semilattice.
+      \item A semilattice computation depends on another semilattice computation if the corresponding \evallatticecomputation{} function calls \latticecomputationlookup{} for the other semilattice computation.
     \end{itemize}
 
     In general, results of computations are cached, so data computations are not re-run (unless the cache is cleared), and semilattice computations are only re-run if their dependencies have changed.
 
-    For semilattice values and semilattice computations, the database stores not only the value, but also a directed acyclic graph Merkle tree of their dependencies on semilattices or semilattice computations. This enables synchronization between different databases, since it is possible to check if any dependencies differ before joining the values. Synchronization proceeds recursively; within the \join call that merges two semilattice values, the \latticelookup and \latticecomputationlookup functions recursively compute a merged result from the two databases, using the Merkle trees as a frozen pointer to the relevant subset of each database at the time of the merge.
+    For semilattice values and semilattice computations, the database stores not only the value, but also a directed acyclic graph Merkle tree of their dependencies on semilattices or semilattice computations. This enables synchronization between different databases, since it is possible to check if any dependencies differ before joining the values. Synchronization proceeds recursively; within the \join{} call that merges two semilattice values, the \latticelookup{} and \latticecomputationlookup{} functions recursively compute a merged result from the two databases, using the Merkle trees as a frozen pointer to the relevant subset of each database at the time of the merge.
 
     When one database has a value for a given semilattice and the other doesn't, the only value is used as the join. Conceptually, we may extend a semilattice over $L$ to a semilattice over $\mathrm{Option}(L)$ as follows:
 
