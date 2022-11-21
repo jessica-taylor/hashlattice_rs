@@ -167,7 +167,7 @@
 
       To define the dependent semilattice conditions, we first define a partial order over partial key-value mappings. If $k : K, v : V, c_1, c_2 : (K_{<k} \to \mathrm{Option}(V))$, if $\checkelem(k, c_1, v)$ and $\checkelem(k, c_2, v)$, then:
 
-      $$c_1 \leq_{k, v} c_2 \Leftrightarrow \forall k' \in d(k, c_1) \cup d(k, c_2), c_1(k') \leq c_2(k')$$.
+      $$c_1 \leq_{k, v} c_2 \Leftrightarrow \forall k' \in d(k, c_1) \cup d(k, c_2), c_1(k') \leq c_2(k').$$
 
       The dependent semilattice conditions state that:
 
@@ -178,6 +178,12 @@
         \item For $k : K, c_1, c_2, c_3 : (K_{<k} \to \mathrm{Option}(V)), v_1 : V$, if $\checkelem(k, c_1, v_1)$ and $c_1 \leq_{k, v_1} c_2$ and $\transport(k, c_1, c_2, v_1) = \mathrm{Some}(v_2)$ and $c_2 \leq_{k, v_2} c_3$, then $\transport(k, c_1, c_3, v_1) = \transport(k, c_2, c_3, v_2)$.
         \item For $k : K, c_1, c_2 : (K_{<k} \to \mathrm{Option}(V)), v_1, v_1' : V$, if $\checkelem(k, c_1, v_1)$ and $\checkelem(k, c_1, v_1')$, then $\transport(k, c_1, c_2, \join(k, c_1, v_1, v_1')) = \transport(k, c_1, v_1) \vee_{k, c_2} \transport(k, c_1, v_1')$, where $\vee_{k, c_2}$ is the join of the option semilattice implied by the join $(v, v') \mapsto \join(k, c_2, v, v')$.
       \end{itemize}
+
+      A context $c : (K_{<k} \to \mathrm{Option}(V))$ is called \emph{finite} if it is $\mathrm{None}$ for all but a finite set of keys. For $k : K$ we define a join over finite contexts (not yet proven to be a semilattice join):
+
+      $$ (c_1 \vee_k c_2)(k') := c_1(k') \vee_{k', c_1 \vee c_2} c_2(k').$$
+
+      The recursion is well-founded because of the ordering on keys.
 
     \subsection{Composing semilattice fibrations}
 
