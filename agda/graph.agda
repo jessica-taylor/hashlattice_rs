@@ -47,14 +47,17 @@ false-neq-true ft = false-isnt-true (transport (cong IsTrue (sym ft)) is-true)
 
 record TotalOrder (T : Type) : Type where
   field
-    _≤ᵗ_ : T → T → Bool
+    leqᵗ : T → T → Bool
+
+  _≤ᵗ_ : T → T → Bool
+  _≤ᵗ_ = leqᵗ
+
+  field
     reflᵗ : {x : T} → x ≤ᵗ x ≡ true
     transᵗ : {x y z : T} → x ≤ᵗ y ≡ true → y ≤ᵗ z ≡ true → x ≤ᵗ z ≡ true
     antisymmᵗ : {x y : T} → x ≤ᵗ y ≡ true → y ≤ᵗ x ≡ true → x ≡ y
     connectedᵗ : (x y : T) → x ≤ᵗ y ≡ true ⊎ y ≤ᵗ x ≡ true
 
-  leqᵗ : T → T → Bool
-  leqᵗ = _≤ᵗ_
 
   gt-sym-leqᵗ : {x y : T} → x ≤ᵗ y ≡ false → y ≤ᵗ x ≡ true
   gt-sym-leqᵗ {x = x} {y = y} x>y with connectedᵗ x y
@@ -100,9 +103,9 @@ open TotalOrder
 
 maybeᵗ : {T : Type} → TotalOrder T → TotalOrder (Maybe T)
 
-_≤ᵗ_ (maybeᵗ ord) nothing _ = true
-_≤ᵗ_ (maybeᵗ ord) (just _) nothing = false
-_≤ᵗ_ (maybeᵗ ord) (just x) (just y) = leqᵗ ord x y
+leqᵗ (maybeᵗ ord) nothing _ = true
+leqᵗ (maybeᵗ ord) (just _) nothing = false
+leqᵗ (maybeᵗ ord) (just x) (just y) = leqᵗ ord x y
 
 reflᵗ (maybeᵗ ord) {x = nothing} = refl
 reflᵗ (maybeᵗ ord) {x = just v} = reflᵗ ord
@@ -130,13 +133,16 @@ Type-maybe-> {T} ord k = Σ T (λ k' → maybe-satisfies (λ k'' → not (leqᵗ
 
 record SemiL (L : Type) : Type where
   field
-    _∨ˢ_ : L → L → L
+    joinˢ : L → L → L
+
+  _∨ˢ_ : L → L → L
+  _∨ˢ_ = joinˢ
+
+  field
     commˢ : (x y : L) → x ∨ˢ y ≡ y ∨ˢ x
     assocˢ : (x y z : L) → (x ∨ˢ y) ∨ˢ z ≡ x ∨ˢ (y ∨ˢ z)
     idemˢ : (x : L) → x ∨ˢ x ≡ x
 
-  joinˢ : L → L → L
-  joinˢ = _∨ˢ_
 
   compeqˢ : (x y z : L) → (x ∨ˢ y) ∨ˢ (x ∨ˢ (y ∨ˢ z)) ≡ x ∨ˢ (y ∨ˢ z)
   compeqˢ x y z =
@@ -154,16 +160,16 @@ record SemiL (L : Type) : Type where
 open SemiL
 
 onepointˢ : SemiL Unit
-_∨ˢ_ onepointˢ tt tt = tt
+joinˢ onepointˢ tt tt = tt
 commˢ onepointˢ x y = λ i → tt
 assocˢ onepointˢ x y z = λ i → tt
 idemˢ onepointˢ x = refl
 
 maybeˢ : {L : Type} → SemiL L → SemiL (Maybe L)
 
-_∨ˢ_ (maybeˢ s) nothing y = y
-_∨ˢ_ (maybeˢ s) x nothing = x
-_∨ˢ_ (maybeˢ s) (just x) (just y) = just (joinˢ s x y)
+joinˢ (maybeˢ s) nothing y = y
+joinˢ (maybeˢ s) x nothing = x
+joinˢ (maybeˢ s) (just x) (just y) = just (joinˢ s x y)
 
 commˢ (maybeˢ s) nothing nothing = refl
 commˢ (maybeˢ s) nothing (just _) = refl
@@ -230,13 +236,23 @@ record SemiLᵈ {L : Type} (S : SemiL L) (D : L → Type) : Type where
 -- 
 
 module _ {K : Type} (kOrd : TotalOrder K) where
-  mutual
-    SemiLStr : ℕ → Type₁
-    SemiLStr n = Ctx n → Type
+
+  record CtxTyStr (k : Maybe K) : Type₁ where
+    -- all new keys must be greater than k
+    coinductive
+    field
+      ty : Type-maybe-> kOrd k → Type
+      semi-ty : (k' : Type-maybe-> kOrd k) → SemiL (ty k')
+      ex : (k' : Type-maybe-> kOrd k) → ty k' → CtxTyStr (just (fst k'))
+
+--   mutual
+--     data SemiLStr : ℕ → Type₁ where
+--       empty-str : SemiLStr 0
+--       rcons-str : (n : ℕ) → (prev : SemiLStr n) → (Ctx n prev → Type) → SemiLStr (suc n)
     
       
-    data Ctx : ℕ → Type where
-      emptyᶜ : Ctx 0
+--     data Ctx : (n : ℕ) → SemiLStr n → Type₁ where
+--       emptyᶜ : Ctx 0 empty-str
 
 --   exs : {K : Type} {kOrd : TotalOrder K} {k : Maybe K} → (ts : CtxTyStr kOrd nothing) → Ctx kOrd ts k → CtxTyStr kOrd k
 --   exs ts nullᶜ = ts
