@@ -4,6 +4,7 @@ module graph where
 
 open import Agda.Builtin.Unit
 open import Agda.Primitive using (Level; lzero; lsuc; _⊔_) public
+open import Data.Empty
 open import Data.Sum using (_⊎_; inj₁; inj₂)
 open import Data.Bool using (Bool; true; false; not; if_then_else_) public
 open import Data.Maybe using (Maybe; just; nothing) public
@@ -91,6 +92,8 @@ record TotalOrder ℓ : Type (lsuc ℓ) where
   field
     connectedᵗ : (x y : elᵗ) → x ≤ᵗ y ⊎ y ≤ᵗ x
 
+open TotalOrder
+
 record SemiL ℓ : Type (lsuc ℓ) where
   field
     partialˢ : PartialOrder ℓ
@@ -141,6 +144,51 @@ record SemiL ℓ : Type (lsuc ℓ) where
   idemˢ x = antisymmˢ (glueˢ reflˢ reflˢ) (inlˢ x x)
 
 open SemiL
+
+onepointˢ : SemiL lzero
+elᵖ (partialˢ onepointˢ) = Unit
+leqᵖ (partialˢ onepointˢ) _ _ = Unit
+leq-propᵖ (partialˢ onepointˢ) _ _ = refl
+reflᵖ (partialˢ onepointˢ) = tt
+transᵖ (partialˢ onepointˢ) _ _ = tt
+antisymmᵖ (partialˢ onepointˢ) _ _ = refl
+joinˢ onepointˢ _ _ = tt
+inlˢ onepointˢ _ _ = tt
+inrˢ onepointˢ _ _ = tt
+glueˢ onepointˢ _ _ = tt
+
+maybeˢ : {ℓ : Level} → (L : SemiL ℓ) → SemiL ℓ
+elᵖ (partialˢ (maybeˢ L)) = Maybe (elˢ L)
+leqᵖ (partialˢ (maybeˢ L)) nothing _ = Unit
+leqᵖ (partialˢ (maybeˢ L)) (just _) nothing = ⊥
+leqᵖ (partialˢ (maybeˢ L)) (just x) (just y) = leqˢ L x y
+leq-propᵖ (partialˢ (maybeˢ L)) {x = nothing} _ _ = refl
+leq-propᵖ (partialˢ (maybeˢ L)) {x = just _} {y = nothing} bot _ = ⊥-elim bot
+leq-propᵖ (partialˢ (maybeˢ L)) {x = just _} {y = just _} = leq-propˢ L
+reflᵖ (partialˢ (maybeˢ L)) {x = nothing} = tt
+reflᵖ (partialˢ (maybeˢ L)) {x = just _} = reflˢ L
+transᵖ (partialˢ (maybeˢ L)) {x = nothing} _ _ = tt
+transᵖ (partialˢ (maybeˢ L)) {x = just _} {y = nothing} x≤y _ = ⊥-elim x≤y
+transᵖ (partialˢ (maybeˢ L)) {x = just _} {y = just _} {z = nothing} _ y≤z = ⊥-elim y≤z
+transᵖ (partialˢ (maybeˢ L)) {x = just _} {y = just _} {z = just _} x≤y y≤z = transˢ L x≤y y≤z
+antisymmᵖ (partialˢ (maybeˢ L)) {x = nothing} {y = nothing} _ _ = refl
+antisymmᵖ (partialˢ (maybeˢ L)) {x = nothing} {y = just _} _ y≤x = ⊥-elim y≤x
+antisymmᵖ (partialˢ (maybeˢ L)) {x = just _} {y = nothing} x≤y _ = ⊥-elim x≤y
+antisymmᵖ (partialˢ (maybeˢ L)) {x = just _} {y = just _} x≤y y≤x = cong just (antisymmˢ L x≤y y≤x)
+joinˢ (maybeˢ L) nothing y = y
+joinˢ (maybeˢ L) x nothing = x
+joinˢ (maybeˢ L) (just x) (just y) = just (joinˢ L x y)
+inlˢ (maybeˢ L) nothing y = tt
+inlˢ (maybeˢ L) (just x) nothing = reflˢ L
+inlˢ (maybeˢ L) (just x) (just y) = inlˢ L x y
+inrˢ (maybeˢ L) x nothing = tt
+inrˢ (maybeˢ L) nothing (just y) = reflˢ L
+inrˢ (maybeˢ L) (just x) (just y) = inrˢ L x y
+glueˢ (maybeˢ L) {x = nothing} _ y≤z = y≤z
+glueˢ (maybeˢ L) {x = just _} {y = nothing} x≤z _ = x≤z
+glueˢ (maybeˢ L) {x = just _} {y = just _} {z = nothing} x≤z _ = x≤z
+glueˢ (maybeˢ L) {x = just _} {y = just _} {z = just _} x≤z y≤z = glueˢ L x≤z y≤z
+
   
 record SemiLᵈ {ℓ₁} (L : SemiL ℓ₁) ℓ₂ : Type (lsuc ℓ₁ ⊔ lsuc ℓ₂) where
   field
@@ -167,26 +215,27 @@ inrˢ (Σ-SemiL L D) (x , x') (y , y') = (inrˢ L x y , inrˢ (semilᵈ D (join�
 glueˢ (Σ-SemiL L D) {x = (x , x')} {y = (y , y')} {z = (z , z')} (x≤z , x'≤z') (y≤z , y'≤z') =
   (glueˢ L x≤z y≤z , {!!})
 
--- module _ {K : Type} (kOrd : TotalOrder K) where
--- 
---   mutual
--- 
---     CtxArg : ℕ → Type₁
---     CtxArg 0 = UnitL (lsuc lzero)
---     CtxArg (suc n) = Σ (CtxArg n) (λ arg → Σ (Ctx n arg → Type) (λ D → SemiLᵈ (ctxˢ n arg) D))
--- 
---     Ctx : (n : ℕ) → CtxArg n → Type
---     Ctx 0 <> = UnitL lzero
---     Ctx (suc n) (arg-n , D , semil-d) = Σ (Ctx n arg-n) D
--- 
--- 
---     ctxˢ : (n : ℕ) → (arg : CtxArg n) → SemiL (Ctx n arg)
---     joinˢ (ctxˢ 0 <>) <> <> = <>
---     joinˢ (ctxˢ (suc n) (arg-n , D , semil-d)) (x-n , x-last) (y-n , y-last) =
---       let xy-n = joinˢ (ctxˢ n arg-n) x-n y-n
---       in (xy-n , joinˢ (semilᵈ semil-d xy-n) (trᵈ semil-d x-last) (trrᵈ semil-d y-last))
---     commˢ (ctxˢ 0 <>) <> <> = refl
---     commˢ (ctxˢ (suc n) (arg-n , D , semil-d)) (x-n , x-last) (y-n , y-last) = {!!}
+CtxArg : ℕ → Type₁
+Ctx : (n : ℕ) → CtxArg n → SemiL lzero
+
+CtxArg 0 = UnitL (lsuc lzero)
+CtxArg (suc n) = Σ (CtxArg n) (λ arg → SemiLᵈ (Ctx n arg) lzero)
+
+Ctx 0 <> = onepointˢ
+Ctx (suc n) (arg-n , D) = Σ-SemiL (Ctx n arg-n) D
+
+module _ (K : TotalOrder lzero) where
+  mutual
+
+    KCtxArg : ℕ → Type₁
+    KCtxArg 0 = UnitL (lsuc lzero)
+    KCtxArg (suc n) = elᵗ K × Σ (KCtxArg n) (λ arg → SemiLᵈ (KCtx n arg) lzero)
+
+    KCtx : (n : ℕ) → KCtxArg n → SemiL lzero
+    KCtx 0 <> = onepointˢ
+    KCtx (suc n) (k , arg-n , D) = {!!}
+
+
 
 -- record TotalOrder {ℓ} (T : Type ℓ) : Type ℓ where
 --   field
@@ -302,11 +351,6 @@ glueˢ (Σ-SemiL L D) {x = (x , x')} {y = (y , y')} {z = (z , z')} (x≤z , x'�
 -- 
 -- open SemiL
 -- 
--- onepointˢ : SemiL Unit
--- joinˢ onepointˢ tt tt = tt
--- commˢ onepointˢ x y = λ i → tt
--- assocˢ onepointˢ x y z = λ i → tt
--- idemˢ onepointˢ x = refl
 -- 
 -- maybeˢ : {L : Type} → SemiL L → SemiL (Maybe L)
 -- 
