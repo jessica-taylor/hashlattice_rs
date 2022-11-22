@@ -200,6 +200,10 @@ record SemiLᵈ {ℓ₁} (L : SemiL ℓ₁) ℓ₂ : Type (lsuc ℓ₁ ⊔ lsuc 
 
 open SemiLᵈ
 
+-- maybeᵈ : {ℓ₁ ℓ₂ : Level} → (L : SemiL ℓ₁) → (D : SemiLᵈ L ℓ₂) → SemiLᵈ L ℓ₂
+-- semilᵈ (maybeᵈ L D) x = maybeˢ (semilᵈ D x)
+-- trᵈ (maybeᵈ L D) x≤y nothing = nothing
+
 Σ-SemiL : {ℓ₁ ℓ₂ : Level} → (L : SemiL ℓ₁) → (D : SemiLᵈ L ℓ₂) → SemiL (ℓ₁ ⊔ ℓ₂)
 elᵖ (partialˢ (Σ-SemiL L D)) = (Σ (elˢ L) (elˢ ∘ semilᵈ D))
 leqᵖ (partialˢ (Σ-SemiL L D)) (x , x') (y , y') = Σ (leqˢ L x y) (λ x≤y → leqˢ (semilᵈ D y) (trᵈ D x≤y x') y')
@@ -229,11 +233,11 @@ module _ (K : TotalOrder lzero) where
 
     KCtxArg : ℕ → Type₁
     KCtxArg 0 = UnitL (lsuc lzero)
-    KCtxArg (suc n) = elᵗ K × Σ (KCtxArg n) (λ arg → SemiLᵈ (KCtx n arg) lzero)
+    KCtxArg (suc n) = elᵗ K × Σ (KCtxArg n) (λ arg → Σ (SemiLᵈ (KCtx n arg) lzero) (λ D → (c : elˢ (KCtx n arg)) → Σ (SemiL lzero) (λ S → semilᵈ D c ≡ maybeˢ S)))
 
     KCtx : (n : ℕ) → KCtxArg n → SemiL lzero
     KCtx 0 <> = onepointˢ
-    KCtx (suc n) (k , arg-n , D) = {!!}
+    KCtx (suc n) (k , arg-n , D , _) = Σ-SemiL (KCtx n arg-n) D
 
 
 
