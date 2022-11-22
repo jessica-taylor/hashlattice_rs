@@ -120,6 +120,20 @@ record SemiL {ℓ} (T : Type ℓ) : Type (ℓ ⊔ lsuc lzero) where
     inrˢ : (x y : T) → y ≤ˢ (x ∨ˢ y)
     glueˢ : {x y z : T} → x ≤ˢ z → y ≤ˢ z → (x ∨ˢ y) ≤ˢ z
 
+  commˢ : (x y : T) → x ∨ˢ y ≡ y ∨ˢ x
+  commˢ x y = antisymmˢ (glueˢ (inrˢ y x) (inlˢ y x)) (glueˢ (inrˢ x y) (inlˢ x y))
+
+  assocˢ : (x y z : T) → (x ∨ˢ y) ∨ˢ z ≡ x ∨ˢ (y ∨ˢ z)
+  assocˢ x y z =
+    antisymmˢ (glueˢ (glueˢ (inlˢ _ _) (transˢ (inlˢ y z) (inrˢ _ _)))
+                     (transˢ (inrˢ y z) (inrˢ _ _)))
+              (glueˢ (transˢ (inlˢ x y) (inlˢ _ _))
+                     (glueˢ (transˢ (inrˢ x y) (inlˢ _ _)) (inrˢ _ _)))
+
+  idemˢ : (x : T) → x ∨ˢ x ≡ x
+  idemˢ x = antisymmˢ (glueˢ reflˢ reflˢ) (inlˢ x x)
+  
+
 -- record TotalOrder {ℓ} (T : Type ℓ) : Type ℓ where
 --   field
 --     leqᵗ : T → T → Bool
