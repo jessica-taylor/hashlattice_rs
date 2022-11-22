@@ -132,7 +132,17 @@ record SemiL {ℓ} (T : Type ℓ) : Type (ℓ ⊔ lsuc lzero) where
 
   idemˢ : (x : T) → x ∨ˢ x ≡ x
   idemˢ x = antisymmˢ (glueˢ reflˢ reflˢ) (inlˢ x x)
+
+open SemiL
   
+record SemiLᵈ {ℓ₁ ℓ₂} {S : Type ℓ₁} (L : SemiL S) (D : S → Type ℓ₂) : Type (ℓ₁ ⊔ ℓ₂ ⊔ lsuc lzero) where
+  field
+    semilᵈ : (s : S) → SemiL (D s)
+    trᵈ : {x y : S} → leqˢ L x y → (x' : D x) → D y
+    idᵈ : {x : S} → (x' : D x) → trᵈ (reflˢ L) x' ≡ x'
+    compᵈ : {x y z : S} → (x≤y : leqˢ L x y) → (y≤z : leqˢ L y z) → (x' : D x) → trᵈ y≤z (trᵈ x≤y x') ≡ trᵈ (transˢ L x≤y y≤z) x'
+    distrᵈ : {x y : S} → (x≤y : leqˢ L x y) → (x' x'' : D x) → trᵈ x≤y (joinˢ (semilᵈ x) x' x'') ≡ joinˢ (semilᵈ y) (trᵈ x≤y x') (trᵈ x≤y x'')
+
 
 -- record TotalOrder {ℓ} (T : Type ℓ) : Type ℓ where
 --   field
