@@ -17,6 +17,9 @@ private
   variable
     ℓ ℓ₁ ℓ₂ ℓ₃ ℓ₄ : Level
 
+data UnitL ℓ : Set ℓ where
+  <> : UnitL ℓ
+
 data Singleton {a} {A : Set a} (x : A) : Set a where
   _with≡_ : (y : A) → x ≡ y → Singleton x
 
@@ -27,8 +30,7 @@ maybe-satisfies : {T : Type} → (T → Bool) → Maybe T → Bool
 maybe-satisfies _ nothing = true
 maybe-satisfies pred (just x) = pred x
 
-Σ-≡-intro :
-  ∀ {α}{A : Set α}{B : A → Set α} {a a' : A} {b : B a} {b' : B a'}
+Σ-≡-intro : ∀ {ℓ₁ ℓ₂} {A : Type ℓ₁} {B : A → Type ℓ₂} {a a' : A} {b : B a} {b' : B a'}
   → (Σ (a ≡ a') λ p → PathP (λ i → B (p i)) b b') → (a , b) ≡ (a' , b')
 
 Σ-≡-intro eqs =
@@ -45,168 +47,256 @@ false-isnt-true ()
 false-neq-true : {T : Type} → false ≡ true → T
 false-neq-true ft = false-isnt-true (transport (cong IsTrue (sym ft)) is-true)
 
-record TotalOrder (T : Type) : Type where
+record PartialOrder {ℓ} (T : Type ℓ) : Type (ℓ ⊔ lsuc lzero) where
   field
-    leqᵗ : T → T → Bool
+    leqᵖ : T → T → Type
 
-  _≤ᵗ_ : T → T → Bool
+  _≤ᵖ_ : T → T → Type
+  _≤ᵖ_ = leqᵖ
+
+  field
+    leq-propᵖ : {x y : T} → isProp (x ≤ᵖ y)
+    reflᵖ : {x : T} → x ≤ᵖ x
+    transᵖ : {x y z : T} → x ≤ᵖ y → y ≤ᵖ z → x ≤ᵖ z
+    antisymmᵖ : {x y : T} → x ≤ᵖ y → y ≤ᵖ x → x ≡ y
+
+open PartialOrder
+
+record TotalOrder {ℓ} (T : Type ℓ) : Type (ℓ ⊔ lsuc lzero) where
+  field
+    partialᵗ : PartialOrder T
+
+  leqᵗ : T → T → Type
+  leqᵗ = leqᵖ partialᵗ
+
+  _≤ᵗ_ : T → T → Type
   _≤ᵗ_ = leqᵗ
 
+  leq-propᵗ : {x y : T} → isProp (x ≤ᵗ y)
+  leq-propᵗ = leq-propᵖ partialᵗ
+
+  reflᵗ : {x : T} → x ≤ᵗ x
+  reflᵗ = reflᵖ partialᵗ
+
+  transᵗ : {x y z : T} → x ≤ᵗ y → y ≤ᵗ z → x ≤ᵗ z
+  transᵗ = transᵖ partialᵗ
+
+  antisymmᵗ : {x y : T} → x ≤ᵗ y → y ≤ᵗ x → x ≡ y
+  antisymmᵗ = antisymmᵖ partialᵗ
+
   field
-    reflᵗ : {x : T} → x ≤ᵗ x ≡ true
-    transᵗ : {x y z : T} → x ≤ᵗ y ≡ true → y ≤ᵗ z ≡ true → x ≤ᵗ z ≡ true
-    antisymmᵗ : {x y : T} → x ≤ᵗ y ≡ true → y ≤ᵗ x ≡ true → x ≡ y
-    connectedᵗ : (x y : T) → x ≤ᵗ y ≡ true ⊎ y ≤ᵗ x ≡ true
+    connectedᵗ : (x y : T) → x ≤ᵗ y ⊎ y ≤ᵗ x
 
-
-  gt-sym-leqᵗ : {x y : T} → x ≤ᵗ y ≡ false → y ≤ᵗ x ≡ true
-  gt-sym-leqᵗ {x = x} {y = y} x>y with connectedᵗ x y
-  ... | inj₁ x≤y = false-neq-true (sym x>y ∙ x≤y)
-  ... | inj₂ y≤x = y≤x
-
-  maxᵗ : T → T → T
-  maxᵗ x y = if leqᵗ x y then y else x
-
-  minᵗ : T → T → T
-  minᵗ x y = if leqᵗ x y then x else y
-
-  max-leq-rᵗ : {x y : T} → x ≤ᵗ y ≡ true → maxᵗ x y ≡ y
-  max-leq-rᵗ {x = x} {y = y} x≤y = cong (λ x≤y → if x≤y then y else x) x≤y
-
-  max-leq-lᵗ : {x y : T} → y ≤ᵗ x ≡ true → maxᵗ x y ≡ x
-  max-leq-lᵗ {x = x} {y = y} y≤x with inspec (x ≤ᵗ y)
-  ... | true with≡ x≤y = cong (λ x≤y → if x≤y then y else x) x≤y ∙ antisymmᵗ y≤x x≤y
-  ... | false with≡ x>y = cong (λ x≤y → if x≤y then y else x) x>y
-
-  max-symᵗ : {x y : T} → maxᵗ x y ≡ maxᵗ y x
-  max-symᵗ {x = x} {y = y} with connectedᵗ x y
-  ... | inj₁ x≤y = max-leq-rᵗ x≤y ∙ sym (max-leq-lᵗ x≤y)
-  ... | inj₂ y≤x = max-leq-lᵗ y≤x ∙ sym (max-leq-rᵗ y≤x)
-                           
-
-  leq-max-lᵗ : {x y : T} → x ≤ᵗ maxᵗ x y ≡ true
-  leq-max-lᵗ {x = x} {y = y} with inspec (leqᵗ x y)
-  ... | true with≡ leq = transport (cong (λ xy → x ≤ᵗ (if xy then y else x) ≡ true) (sym leq)) leq
-  ... | false with≡ gt = transport (cong (λ xy → x ≤ᵗ (if xy then y else x) ≡ true) (sym gt)) reflᵗ
-
-  leq-max-rᵗ : {x y : T} → y ≤ᵗ maxᵗ x y ≡ true
-  leq-max-rᵗ {x = x} {y = y} = y ≤ᵗ maxᵗ x y
-                               ≡⟨ cong (λ m → y ≤ᵗ m) max-symᵗ ⟩
-                               y ≤ᵗ maxᵗ y x
-                               ≡⟨ leq-max-lᵗ ⟩
-                               true
-                               ∎
-
-
-open TotalOrder
-
-
-maybeᵗ : {T : Type} → TotalOrder T → TotalOrder (Maybe T)
-
-leqᵗ (maybeᵗ ord) nothing _ = true
-leqᵗ (maybeᵗ ord) (just _) nothing = false
-leqᵗ (maybeᵗ ord) (just x) (just y) = leqᵗ ord x y
-
-reflᵗ (maybeᵗ ord) {x = nothing} = refl
-reflᵗ (maybeᵗ ord) {x = just v} = reflᵗ ord
-
-transᵗ (maybeᵗ ord) {x = nothing} _ _ = refl
-transᵗ (maybeᵗ ord) {x = just _} {y = nothing} {z = nothing} xy _ = xy
-transᵗ (maybeᵗ ord) {x = just _} {y = nothing} {z = just _} xy _ = false-neq-true xy
-transᵗ (maybeᵗ ord) {x = just _} {y = just _} {z = nothing} _ yz = yz
-transᵗ (maybeᵗ ord) {x = just x'} {y = just y'} {z = just z'} xy yz = transᵗ ord xy yz
-
-antisymmᵗ (maybeᵗ ord) {x = nothing} {y = nothing} _ _ = refl
-antisymmᵗ (maybeᵗ ord) {x = nothing} {y = just _} _ yz = false-neq-true yz
-antisymmᵗ (maybeᵗ ord) {x = just _} {y = nothing} xy _ = false-neq-true xy
-antisymmᵗ (maybeᵗ ord) {x = just _} {y = just _} xy yz = cong just (antisymmᵗ ord xy yz)
-
-connectedᵗ (maybeᵗ ord) nothing _ = inj₁ refl
-connectedᵗ (maybeᵗ ord) (just _) nothing = inj₂ refl
-connectedᵗ (maybeᵗ ord) (just x) (just y) = connectedᵗ ord x y
-
-Type-≤ : {T : Type} → (ord : TotalOrder T) → T → Type
-Type-≤ {T} ord x = Σ T (λ y → leqᵗ ord y x ≡ true)
-
-Type-maybe-> : {T : Type} → (ord : TotalOrder T) → Maybe T → Type
-Type-maybe-> {T} ord k = Σ T (λ k' → maybe-satisfies (λ k'' → not (leqᵗ ord k' k'')) k ≡ true)
-
-record SemiL (L : Type) : Type where
+record SemiL {ℓ} (T : Type ℓ) : Type (ℓ ⊔ lsuc lzero) where
   field
-    joinˢ : L → L → L
+    partialˢ : PartialOrder T
+  
+  leqˢ : T → T → Type
+  leqˢ = leqᵖ partialˢ
 
-  _∨ˢ_ : L → L → L
+  _≤ˢ_ : T → T → Type
+  _≤ˢ_ = leqˢ
+
+  leq-propˢ : {x y : T} → isProp (x ≤ˢ y)
+  leq-propˢ = leq-propᵖ partialˢ
+
+  reflˢ : {x : T} → x ≤ˢ x
+  reflˢ = reflᵖ partialˢ
+
+  transˢ : {x y z : T} → x ≤ˢ y → y ≤ˢ z → x ≤ˢ z
+  transˢ = transᵖ partialˢ
+
+  antisymmˢ : {x y : T} → x ≤ˢ y → y ≤ˢ x → x ≡ y
+  antisymmˢ = antisymmᵖ partialˢ
+
+  field
+    joinˢ : T → T → T
+
+  _∨ˢ_ : T → T → T
   _∨ˢ_ = joinˢ
 
   field
-    commˢ : (x y : L) → x ∨ˢ y ≡ y ∨ˢ x
-    assocˢ : (x y z : L) → (x ∨ˢ y) ∨ˢ z ≡ x ∨ˢ (y ∨ˢ z)
-    idemˢ : (x : L) → x ∨ˢ x ≡ x
+    inlˢ : (x y : T) → x ≤ˢ (x ∨ˢ y)
+    inrˢ : (x y : T) → y ≤ˢ (x ∨ˢ y)
+    glueˢ : {x y z : T} → x ≤ˢ z → y ≤ˢ z → (x ∨ˢ y) ≤ˢ z
+
+-- record TotalOrder {ℓ} (T : Type ℓ) : Type ℓ where
+--   field
+--     leqᵗ : T → T → Bool
+-- 
+--   _≤ᵗ_ : T → T → Bool
+--   _≤ᵗ_ = leqᵗ
+-- 
+--   field
+--     reflᵗ : {x : T} → x ≤ᵗ x ≡ true
+--     transᵗ : {x y z : T} → x ≤ᵗ y ≡ true → y ≤ᵗ z ≡ true → x ≤ᵗ z ≡ true
+--     antisymmᵗ : {x y : T} → x ≤ᵗ y ≡ true → y ≤ᵗ x ≡ true → x ≡ y
+--     connectedᵗ : (x y : T) → x ≤ᵗ y ≡ true ⊎ y ≤ᵗ x ≡ true
+-- 
+-- 
+--   gt-sym-leqᵗ : {x y : T} → x ≤ᵗ y ≡ false → y ≤ᵗ x ≡ true
+--   gt-sym-leqᵗ {x = x} {y = y} x>y with connectedᵗ x y
+--   ... | inj₁ x≤y = false-neq-true (sym x>y ∙ x≤y)
+--   ... | inj₂ y≤x = y≤x
+-- 
+--   maxᵗ : T → T → T
+--   maxᵗ x y = if leqᵗ x y then y else x
+-- 
+--   minᵗ : T → T → T
+--   minᵗ x y = if leqᵗ x y then x else y
+-- 
+--   max-leq-rᵗ : {x y : T} → x ≤ᵗ y ≡ true → maxᵗ x y ≡ y
+--   max-leq-rᵗ {x = x} {y = y} x≤y = cong (λ x≤y → if x≤y then y else x) x≤y
+-- 
+--   max-leq-lᵗ : {x y : T} → y ≤ᵗ x ≡ true → maxᵗ x y ≡ x
+--   max-leq-lᵗ {x = x} {y = y} y≤x with inspec (x ≤ᵗ y)
+--   ... | true with≡ x≤y = cong (λ x≤y → if x≤y then y else x) x≤y ∙ antisymmᵗ y≤x x≤y
+--   ... | false with≡ x>y = cong (λ x≤y → if x≤y then y else x) x>y
+-- 
+--   max-symᵗ : {x y : T} → maxᵗ x y ≡ maxᵗ y x
+--   max-symᵗ {x = x} {y = y} with connectedᵗ x y
+--   ... | inj₁ x≤y = max-leq-rᵗ x≤y ∙ sym (max-leq-lᵗ x≤y)
+--   ... | inj₂ y≤x = max-leq-lᵗ y≤x ∙ sym (max-leq-rᵗ y≤x)
+--                            
+-- 
+--   leq-max-lᵗ : {x y : T} → x ≤ᵗ maxᵗ x y ≡ true
+--   leq-max-lᵗ {x = x} {y = y} with inspec (leqᵗ x y)
+--   ... | true with≡ leq = transport (cong (λ xy → x ≤ᵗ (if xy then y else x) ≡ true) (sym leq)) leq
+--   ... | false with≡ gt = transport (cong (λ xy → x ≤ᵗ (if xy then y else x) ≡ true) (sym gt)) reflᵗ
+-- 
+--   leq-max-rᵗ : {x y : T} → y ≤ᵗ maxᵗ x y ≡ true
+--   leq-max-rᵗ {x = x} {y = y} = y ≤ᵗ maxᵗ x y
+--                                ≡⟨ cong (λ m → y ≤ᵗ m) max-symᵗ ⟩
+--                                y ≤ᵗ maxᵗ y x
+--                                ≡⟨ leq-max-lᵗ ⟩
+--                                true
+--                                ∎
 
 
-  compeqˢ : (x y z : L) → (x ∨ˢ y) ∨ˢ (x ∨ˢ (y ∨ˢ z)) ≡ x ∨ˢ (y ∨ˢ z)
-  compeqˢ x y z =
-    (x ∨ˢ y) ∨ˢ (x ∨ˢ (y ∨ˢ z))
-    ≡⟨ cong (joinˢ (x ∨ˢ y)) (assocˢ x y z ⁻¹) ⟩
-    (x ∨ˢ y) ∨ˢ ((x ∨ˢ y) ∨ˢ z)
-    ≡⟨ assocˢ (x ∨ˢ y) (x ∨ˢ y) z ⁻¹ ⟩
-    ((x ∨ˢ y) ∨ˢ (x ∨ˢ y)) ∨ˢ z
-    ≡⟨ cong (λ a → a ∨ˢ z) (idemˢ (x ∨ˢ y)) ⟩
-    (x ∨ˢ y) ∨ˢ z
-    ≡⟨ assocˢ x y z ⟩
-    x ∨ˢ (y ∨ˢ z)
-    ∎
-
-open SemiL
-
-onepointˢ : SemiL Unit
-joinˢ onepointˢ tt tt = tt
-commˢ onepointˢ x y = λ i → tt
-assocˢ onepointˢ x y z = λ i → tt
-idemˢ onepointˢ x = refl
-
-maybeˢ : {L : Type} → SemiL L → SemiL (Maybe L)
-
-joinˢ (maybeˢ s) nothing y = y
-joinˢ (maybeˢ s) x nothing = x
-joinˢ (maybeˢ s) (just x) (just y) = just (joinˢ s x y)
-
-commˢ (maybeˢ s) nothing nothing = refl
-commˢ (maybeˢ s) nothing (just _) = refl
-commˢ (maybeˢ s) (just _) nothing = refl
-commˢ (maybeˢ s) (just x) (just y) = cong just (commˢ s x y)
-
-assocˢ (maybeˢ s) nothing _ _ = refl
-assocˢ (maybeˢ s) (just _) nothing _ = refl
-assocˢ (maybeˢ s) (just _) (just _) nothing = refl
-assocˢ (maybeˢ s) (just x) (just y) (just z) = cong just (assocˢ s x y z)
-
-idemˢ (maybeˢ s) nothing = refl
-idemˢ (maybeˢ s) (just x) = cong just (idemˢ s x)
-
-record SemiLᵈ {L : Type} (S : SemiL L) (D : L → Type) : Type where
-  field
-
-    semilᵈ : (l : L) → SemiL (D l)
-
-    trᵈ : {x y : L} (x' : D x) → D (joinˢ S x y)
-
-    idᵈ : {x : L} (x' : D x) → PathP (λ i → D (idemˢ S x i)) (trᵈ x') x'
-
-    compᵈ : {x y z : L} (x' : D x) →
-      PathP (λ i → D (compeqˢ S x y z i)) (trᵈ (trᵈ x')) (trᵈ x') 
-
-    distrᵈ : {x y : L} (x' x'' : D x) →
-      trᵈ (joinˢ (semilᵈ x) x' x'') ≡ joinˢ (semilᵈ (joinˢ S x y)) (trᵈ x') (trᵈ x'')
-
---   trcommᵈ : {x y : L L} → L (semilᵈ (joinˢ L x y)) → L (semilᵈ (joinˢ L y x))
---   trcommᵈ {x} {y} = transport (ap (λ e → L (semilᵈ e)) (commˢ L x y))
+-- open TotalOrder
+-- 
+-- 
+-- maybeᵗ : {T : Type} → TotalOrder T → TotalOrder (Maybe T)
+-- 
+-- leqᵗ (maybeᵗ ord) nothing _ = true
+-- leqᵗ (maybeᵗ ord) (just _) nothing = false
+-- leqᵗ (maybeᵗ ord) (just x) (just y) = leqᵗ ord x y
+-- 
+-- reflᵗ (maybeᵗ ord) {x = nothing} = refl
+-- reflᵗ (maybeᵗ ord) {x = just v} = reflᵗ ord
+-- 
+-- transᵗ (maybeᵗ ord) {x = nothing} _ _ = refl
+-- transᵗ (maybeᵗ ord) {x = just _} {y = nothing} {z = nothing} xy _ = xy
+-- transᵗ (maybeᵗ ord) {x = just _} {y = nothing} {z = just _} xy _ = false-neq-true xy
+-- transᵗ (maybeᵗ ord) {x = just _} {y = just _} {z = nothing} _ yz = yz
+-- transᵗ (maybeᵗ ord) {x = just x'} {y = just y'} {z = just z'} xy yz = transᵗ ord xy yz
+-- 
+-- antisymmᵗ (maybeᵗ ord) {x = nothing} {y = nothing} _ _ = refl
+-- antisymmᵗ (maybeᵗ ord) {x = nothing} {y = just _} _ yz = false-neq-true yz
+-- antisymmᵗ (maybeᵗ ord) {x = just _} {y = nothing} xy _ = false-neq-true xy
+-- antisymmᵗ (maybeᵗ ord) {x = just _} {y = just _} xy yz = cong just (antisymmᵗ ord xy yz)
+-- 
+-- connectedᵗ (maybeᵗ ord) nothing _ = inj₁ refl
+-- connectedᵗ (maybeᵗ ord) (just _) nothing = inj₂ refl
+-- connectedᵗ (maybeᵗ ord) (just x) (just y) = connectedᵗ ord x y
+-- 
+-- Type-≤ : {T : Type} → (ord : TotalOrder T) → T → Type
+-- Type-≤ {T} ord x = Σ T (λ y → leqᵗ ord y x ≡ true)
+-- 
+-- Type-maybe-> : {T : Type} → (ord : TotalOrder T) → Maybe T → Type
+-- Type-maybe-> {T} ord k = Σ T (λ k' → maybe-satisfies (λ k'' → not (leqᵗ ord k' k'')) k ≡ true)
+-- 
+-- record SemiL {ℓ} (L : Type ℓ) : Type ℓ where
+--   field
+--     joinˢ : L → L → L
+-- 
+--   _∨ˢ_ : L → L → L
+--   _∨ˢ_ = joinˢ
+-- 
+--   field
+--     commˢ : (x y : L) → x ∨ˢ y ≡ y ∨ˢ x
+--     assocˢ : (x y z : L) → (x ∨ˢ y) ∨ˢ z ≡ x ∨ˢ (y ∨ˢ z)
+--     idemˢ : (x : L) → x ∨ˢ x ≡ x
+-- 
+-- 
+--   compeqˢ : (x y z : L) → (x ∨ˢ y) ∨ˢ (x ∨ˢ (y ∨ˢ z)) ≡ x ∨ˢ (y ∨ˢ z)
+--   compeqˢ x y z =
+--     (x ∨ˢ y) ∨ˢ (x ∨ˢ (y ∨ˢ z))
+--     ≡⟨ cong (joinˢ (x ∨ˢ y)) (assocˢ x y z ⁻¹) ⟩
+--     (x ∨ˢ y) ∨ˢ ((x ∨ˢ y) ∨ˢ z)
+--     ≡⟨ assocˢ (x ∨ˢ y) (x ∨ˢ y) z ⁻¹ ⟩
+--     ((x ∨ˢ y) ∨ˢ (x ∨ˢ y)) ∨ˢ z
+--     ≡⟨ cong (λ a → a ∨ˢ z) (idemˢ (x ∨ˢ y)) ⟩
+--     (x ∨ˢ y) ∨ˢ z
+--     ≡⟨ assocˢ x y z ⟩
+--     x ∨ˢ (y ∨ˢ z)
+--     ∎
+-- 
+-- open SemiL
+-- 
+-- onepointˢ : SemiL Unit
+-- joinˢ onepointˢ tt tt = tt
+-- commˢ onepointˢ x y = λ i → tt
+-- assocˢ onepointˢ x y z = λ i → tt
+-- idemˢ onepointˢ x = refl
+-- 
+-- maybeˢ : {L : Type} → SemiL L → SemiL (Maybe L)
+-- 
+-- joinˢ (maybeˢ s) nothing y = y
+-- joinˢ (maybeˢ s) x nothing = x
+-- joinˢ (maybeˢ s) (just x) (just y) = just (joinˢ s x y)
+-- 
+-- commˢ (maybeˢ s) nothing nothing = refl
+-- commˢ (maybeˢ s) nothing (just _) = refl
+-- commˢ (maybeˢ s) (just _) nothing = refl
+-- commˢ (maybeˢ s) (just x) (just y) = cong just (commˢ s x y)
+-- 
+-- assocˢ (maybeˢ s) nothing _ _ = refl
+-- assocˢ (maybeˢ s) (just _) nothing _ = refl
+-- assocˢ (maybeˢ s) (just _) (just _) nothing = refl
+-- assocˢ (maybeˢ s) (just x) (just y) (just z) = cong just (assocˢ s x y z)
+-- 
+-- idemˢ (maybeˢ s) nothing = refl
+-- idemˢ (maybeˢ s) (just x) = cong just (idemˢ s x)
+-- 
+-- record SemiLᵈ {ℓ₁ ℓ₂} {S : Type ℓ₁} (L : SemiL S) (D : S → Type ℓ₂) : Type (ℓ₁ ⊔ ℓ₂) where
+--   field
+-- 
+--     semilᵈ : (l : S) → SemiL (D l)
+-- 
+--     trᵈ : {x y : S} → D x → D (joinˢ L x y)
+-- 
+--     idᵈ : {x : S} (x' : D x) → PathP (λ i → D (idemˢ L x i)) (trᵈ x') x'
+-- 
+--     compᵈ : {x y z : S} (x' : D x) →
+--       PathP (λ i → D (compeqˢ L x y z i)) (trᵈ (trᵈ x')) (trᵈ x') 
+-- 
+--     distrᵈ : {x y : S} (x' x'' : D x) →
+--       trᵈ (joinˢ (semilᵈ x) x' x'') ≡ joinˢ (semilᵈ (joinˢ L x y)) (trᵈ x') (trᵈ x'')
+-- 
+--   trcommᵈ : {x y : S} → D (joinˢ L x y) → D (joinˢ L y x)
+--   trcommᵈ {x} {y} = transport (cong D (commˢ L x y))
 --   
---   trrᵈ : {x y : L L} (y' : L (semilᵈ y)) → L (semilᵈ (joinˢ L x y))
+--   trrᵈ : {x y : S} → D y → D (joinˢ L x y)
 --   trrᵈ = trcommᵈ ∘ trᵈ
 -- 
 -- 
+-- 
 -- open SemiLᵈ
+-- 
+-- Σ-SemiL : {ℓ₁ ℓ₂ : Level} → {S : Type ℓ₁} → (L : SemiL S) → {D : S → Type ℓ₂} → (DL : SemiLᵈ L D) → SemiL (Σ S D)
+-- joinˢ (Σ-SemiL L DL) (x , x') (y , y') = joinˢ L x y , joinˢ (semilᵈ DL (joinˢ L x y)) (trᵈ DL x') (trrᵈ DL y')
+-- commˢ (Σ-SemiL L DL) (x , x') (y , y') = Σ-≡-intro (commˢ L x y , (λ i → {!!}))
+-- assocˢ (Σ-SemiL L DL) (x , x') (y , y') (z , z') = {!!}
+-- idemˢ (Σ-SemiL L {D} DL) (x , x') = Σ-≡-intro (idemˢ L x , λ i → transp
+--   {!!}
+--   (~ i) x')
+-- Goal: PathP (λ i → D (idemˢ L x i))
+--       (joinˢ (semilᵈ DL (joinˢ L x x)) (trᵈ DL x')
+--        (trrᵈ DL x'))
+--       x'
+
+
 -- 
 -- Σ-SemiL : (ℒ : SemiL ℓ₁) (ℳ : SemiLᵈ ℒ ℓ₂) → SemiL (ℓ₁ ⊔ ℓ₂)
 -- elˢ (Σ-SemiL ℒ ℳ) = Σ (elˢ ℒ) (elˢ ∘ semilᵈ ℳ)
@@ -235,15 +325,35 @@ record SemiLᵈ {L : Type} (S : SemiL L) (D : L → Type) : Type where
 --     rconsᶜ : {k : Maybe K} → (c : Ctx kOrd ts k) → (k' : Type-maybe-> kOrd k) → (el : ty (exs ts c) k') → Ctx kOrd ts (just (fst k'))
 -- 
 
-module _ {K : Type} (kOrd : TotalOrder K) where
+-- module _ {K : Type} (kOrd : TotalOrder K) where
+-- 
+--   mutual
+-- 
+--     CtxArg : ℕ → Type₁
+--     CtxArg 0 = UnitL (lsuc lzero)
+--     CtxArg (suc n) = Σ (CtxArg n) (λ arg → Σ (Ctx n arg → Type) (λ D → SemiLᵈ (ctxˢ n arg) D))
+-- 
+--     Ctx : (n : ℕ) → CtxArg n → Type
+--     Ctx 0 <> = UnitL lzero
+--     Ctx (suc n) (arg-n , D , semil-d) = Σ (Ctx n arg-n) D
+-- 
+-- 
+--     ctxˢ : (n : ℕ) → (arg : CtxArg n) → SemiL (Ctx n arg)
+--     joinˢ (ctxˢ 0 <>) <> <> = <>
+--     joinˢ (ctxˢ (suc n) (arg-n , D , semil-d)) (x-n , x-last) (y-n , y-last) =
+--       let xy-n = joinˢ (ctxˢ n arg-n) x-n y-n
+--       in (xy-n , joinˢ (semilᵈ semil-d xy-n) (trᵈ semil-d x-last) (trrᵈ semil-d y-last))
+--     commˢ (ctxˢ 0 <>) <> <> = refl
+--     commˢ (ctxˢ (suc n) (arg-n , D , semil-d)) (x-n , x-last) (y-n , y-last) = {!!}
 
-  record CtxTyStr (k : Maybe K) : Type₁ where
-    -- all new keys must be greater than k
-    coinductive
-    field
-      ty : Type-maybe-> kOrd k → Type
-      semi-ty : (k' : Type-maybe-> kOrd k) → SemiL (ty k')
-      ex : (k' : Type-maybe-> kOrd k) → ty k' → CtxTyStr (just (fst k'))
+
+--   record CtxTyStr (k : Maybe K) : Type₁ where
+--     -- all new keys must be greater than k
+--     coinductive
+--     field
+--       ty : Type-maybe-> kOrd k → Type
+--       semi-ty : (k' : Type-maybe-> kOrd k) → SemiL (ty k')
+--       ex : (k' : Type-maybe-> kOrd k) → ty k' → CtxTyStr (just (fst k'))
 
 --   mutual
 --     data SemiLStr : ℕ → Type₁ where
