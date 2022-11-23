@@ -13,6 +13,7 @@ open import Cubical.Foundations.Everything public
 
 open import Cubical.Data.Nat
 open import Cubical.Data.Sigma
+open import Cubical.Data.Sigma.Base using (_×_) public
 
 private
   variable
@@ -129,6 +130,8 @@ record SemiL ℓ : Type (lsuc ℓ) where
     inlˢ : (x y : elˢ) → x ≤ˢ (x ∨ˢ y)
     inrˢ : (x y : elˢ) → y ≤ˢ (x ∨ˢ y)
     glueˢ : {x y z : elˢ} → x ≤ˢ z → y ≤ˢ z → (x ∨ˢ y) ≤ˢ z
+    bottomˢ : elˢ
+    bottom-minˢ : {x : elˢ} → bottomˢ ≤ˢ x
 
   commˢ : (x y : elˢ) → x ∨ˢ y ≡ y ∨ˢ x
   commˢ x y = antisymmˢ (glueˢ (inrˢ y x) (inlˢ y x)) (glueˢ (inrˢ x y) (inlˢ x y))
@@ -156,38 +159,40 @@ joinˢ onepointˢ _ _ = tt
 inlˢ onepointˢ _ _ = tt
 inrˢ onepointˢ _ _ = tt
 glueˢ onepointˢ _ _ = tt
+bottomˢ onepointˢ = tt
+bottom-minˢ onepointˢ = tt
 
-maybeˢ : {ℓ : Level} → (L : SemiL ℓ) → SemiL ℓ
-elᵖ (partialˢ (maybeˢ L)) = Maybe (elˢ L)
-leqᵖ (partialˢ (maybeˢ L)) nothing _ = Unit
-leqᵖ (partialˢ (maybeˢ L)) (just _) nothing = ⊥
-leqᵖ (partialˢ (maybeˢ L)) (just x) (just y) = leqˢ L x y
-leq-propᵖ (partialˢ (maybeˢ L)) {x = nothing} _ _ = refl
-leq-propᵖ (partialˢ (maybeˢ L)) {x = just _} {y = nothing} bot _ = ⊥-elim bot
-leq-propᵖ (partialˢ (maybeˢ L)) {x = just _} {y = just _} = leq-propˢ L
-reflᵖ (partialˢ (maybeˢ L)) {x = nothing} = tt
-reflᵖ (partialˢ (maybeˢ L)) {x = just _} = reflˢ L
-transᵖ (partialˢ (maybeˢ L)) {x = nothing} _ _ = tt
-transᵖ (partialˢ (maybeˢ L)) {x = just _} {y = nothing} x≤y _ = ⊥-elim x≤y
-transᵖ (partialˢ (maybeˢ L)) {x = just _} {y = just _} {z = nothing} _ y≤z = ⊥-elim y≤z
-transᵖ (partialˢ (maybeˢ L)) {x = just _} {y = just _} {z = just _} x≤y y≤z = transˢ L x≤y y≤z
-antisymmᵖ (partialˢ (maybeˢ L)) {x = nothing} {y = nothing} _ _ = refl
-antisymmᵖ (partialˢ (maybeˢ L)) {x = nothing} {y = just _} _ y≤x = ⊥-elim y≤x
-antisymmᵖ (partialˢ (maybeˢ L)) {x = just _} {y = nothing} x≤y _ = ⊥-elim x≤y
-antisymmᵖ (partialˢ (maybeˢ L)) {x = just _} {y = just _} x≤y y≤x = cong just (antisymmˢ L x≤y y≤x)
-joinˢ (maybeˢ L) nothing y = y
-joinˢ (maybeˢ L) x nothing = x
-joinˢ (maybeˢ L) (just x) (just y) = just (joinˢ L x y)
-inlˢ (maybeˢ L) nothing y = tt
-inlˢ (maybeˢ L) (just x) nothing = reflˢ L
-inlˢ (maybeˢ L) (just x) (just y) = inlˢ L x y
-inrˢ (maybeˢ L) x nothing = tt
-inrˢ (maybeˢ L) nothing (just y) = reflˢ L
-inrˢ (maybeˢ L) (just x) (just y) = inrˢ L x y
-glueˢ (maybeˢ L) {x = nothing} _ y≤z = y≤z
-glueˢ (maybeˢ L) {x = just _} {y = nothing} x≤z _ = x≤z
-glueˢ (maybeˢ L) {x = just _} {y = just _} {z = nothing} x≤z _ = x≤z
-glueˢ (maybeˢ L) {x = just _} {y = just _} {z = just _} x≤z y≤z = glueˢ L x≤z y≤z
+-- maybeˢ : {ℓ : Level} → (L : SemiL ℓ) → SemiL ℓ
+-- elᵖ (partialˢ (maybeˢ L)) = Maybe (elˢ L)
+-- leqᵖ (partialˢ (maybeˢ L)) nothing _ = Unit
+-- leqᵖ (partialˢ (maybeˢ L)) (just _) nothing = ⊥
+-- leqᵖ (partialˢ (maybeˢ L)) (just x) (just y) = leqˢ L x y
+-- leq-propᵖ (partialˢ (maybeˢ L)) {x = nothing} _ _ = refl
+-- leq-propᵖ (partialˢ (maybeˢ L)) {x = just _} {y = nothing} bot _ = ⊥-elim bot
+-- leq-propᵖ (partialˢ (maybeˢ L)) {x = just _} {y = just _} = leq-propˢ L
+-- reflᵖ (partialˢ (maybeˢ L)) {x = nothing} = tt
+-- reflᵖ (partialˢ (maybeˢ L)) {x = just _} = reflˢ L
+-- transᵖ (partialˢ (maybeˢ L)) {x = nothing} _ _ = tt
+-- transᵖ (partialˢ (maybeˢ L)) {x = just _} {y = nothing} x≤y _ = ⊥-elim x≤y
+-- transᵖ (partialˢ (maybeˢ L)) {x = just _} {y = just _} {z = nothing} _ y≤z = ⊥-elim y≤z
+-- transᵖ (partialˢ (maybeˢ L)) {x = just _} {y = just _} {z = just _} x≤y y≤z = transˢ L x≤y y≤z
+-- antisymmᵖ (partialˢ (maybeˢ L)) {x = nothing} {y = nothing} _ _ = refl
+-- antisymmᵖ (partialˢ (maybeˢ L)) {x = nothing} {y = just _} _ y≤x = ⊥-elim y≤x
+-- antisymmᵖ (partialˢ (maybeˢ L)) {x = just _} {y = nothing} x≤y _ = ⊥-elim x≤y
+-- antisymmᵖ (partialˢ (maybeˢ L)) {x = just _} {y = just _} x≤y y≤x = cong just (antisymmˢ L x≤y y≤x)
+-- joinˢ (maybeˢ L) nothing y = y
+-- joinˢ (maybeˢ L) x nothing = x
+-- joinˢ (maybeˢ L) (just x) (just y) = just (joinˢ L x y)
+-- inlˢ (maybeˢ L) nothing y = tt
+-- inlˢ (maybeˢ L) (just x) nothing = reflˢ L
+-- inlˢ (maybeˢ L) (just x) (just y) = inlˢ L x y
+-- inrˢ (maybeˢ L) x nothing = tt
+-- inrˢ (maybeˢ L) nothing (just y) = reflˢ L
+-- inrˢ (maybeˢ L) (just x) (just y) = inrˢ L x y
+-- glueˢ (maybeˢ L) {x = nothing} _ y≤z = y≤z
+-- glueˢ (maybeˢ L) {x = just _} {y = nothing} x≤z _ = x≤z
+-- glueˢ (maybeˢ L) {x = just _} {y = just _} {z = nothing} x≤z _ = x≤z
+-- glueˢ (maybeˢ L) {x = just _} {y = just _} {z = just _} x≤z y≤z = glueˢ L x≤z y≤z
 
   
 record SemiLᵈ {ℓ₁} (L : SemiL ℓ₁) ℓ₂ : Type (lsuc ℓ₁ ⊔ lsuc ℓ₂) where
@@ -228,17 +233,28 @@ CtxArg (suc n) = Σ (CtxArg n) (λ arg → SemiLᵈ (Ctx n arg) lzero)
 Ctx 0 <> = onepointˢ
 Ctx (suc n) (arg-n , D) = Σ-SemiL (Ctx n arg-n) D
 
+pair : {A B : Type₁} → A → B → A × B
+pair a b = a , b
+
 module _ (K : TotalOrder lzero) where
   mutual
+    record KCtxArgSuc (n : ℕ) : Type₁ where
+      inductive
+      field
+        key : elᵗ K
+        butlast : KCtxArg n
+        D : SemiLᵈ (KCtx n butlast) lzero
 
     KCtxArg : ℕ → Type₁
     KCtxArg 0 = UnitL (lsuc lzero)
-    KCtxArg (suc n) = elᵗ K × Σ (KCtxArg n) (λ arg → Σ (SemiLᵈ (KCtx n arg) lzero) (λ D → (c : elˢ (KCtx n arg)) → Σ (SemiL lzero) (λ S → semilᵈ D c ≡ maybeˢ S)))
+    KCtxArg (suc n) = KCtxArgSuc n
 
     KCtx : (n : ℕ) → KCtxArg n → SemiL lzero
     KCtx 0 <> = onepointˢ
-    KCtx (suc n) (k , arg-n , D , _) = Σ-SemiL (KCtx n arg-n) D
+    KCtx (suc n) arg-suc = Σ-SemiL (KCtx n (KCtxArgSuc.butlast arg-suc)) (KCtxArgSuc.D arg-suc)
 
+  kctx-rcons-bot : (n : ℕ) → (arg-suc : KCtxArgSuc n) → elˢ (KCtx n (KCtxArgSuc.butlast arg-suc)) → elˢ (KCtx (suc n) arg-suc)
+  kctx-rcons-bot n arg-suc ctx = (ctx , bottomˢ (semilᵈ (KCtxArgSuc.D arg-suc) ctx))
 
 
 -- record TotalOrder {ℓ} (T : Type ℓ) : Type ℓ where
