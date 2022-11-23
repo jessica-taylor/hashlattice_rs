@@ -202,6 +202,7 @@ record SemiLᵈ {ℓ₁} (L : SemiL ℓ₁) ℓ₂ : Type (lsuc ℓ₁ ⊔ lsuc 
     idᵈ : {x : elˢ L} → (x' : elˢ (semilᵈ x)) → trᵈ (reflˢ L) x' ≡ x'
     compᵈ : {x y z : elˢ L} → (x≤y : leqˢ L x y) → (y≤z : leqˢ L y z) → (x' : elˢ (semilᵈ x)) → trᵈ y≤z (trᵈ x≤y x') ≡ trᵈ (transˢ L x≤y y≤z) x'
     distrᵈ : {x y : elˢ L} → (x≤y : leqˢ L x y) → (x' x'' : elˢ (semilᵈ x)) → trᵈ x≤y (joinˢ (semilᵈ x) x' x'') ≡ joinˢ (semilᵈ y) (trᵈ x≤y x') (trᵈ x≤y x'')
+    tr-bottomᵈ : {x y : elˢ L} → (x≤y : leqˢ L x y) → trᵈ x≤y (bottomˢ (semilᵈ x)) ≡ bottomˢ (semilᵈ y)
 
 open SemiLᵈ
 
@@ -223,6 +224,8 @@ inlˢ (Σ-SemiL L D) (x , x') (y , y') = (inlˢ L x y , inlˢ (semilᵈ D (join�
 inrˢ (Σ-SemiL L D) (x , x') (y , y') = (inrˢ L x y , inrˢ (semilᵈ D (joinˢ L x y)) _ _)
 glueˢ (Σ-SemiL L D) {x = (x , x')} {y = (y , y')} {z = (z , z')} (x≤z , x'≤z') (y≤z , y'≤z') =
   (glueˢ L x≤z y≤z , {!!})
+bottomˢ (Σ-SemiL L D) = (bottomˢ L , bottomˢ (semilᵈ D (bottomˢ L)))
+bottom-minˢ (Σ-SemiL L D) {x = (x , x')} = (bottom-minˢ L , subst (λ b → leqˢ (semilᵈ D x) b x') (sym (tr-bottomᵈ D (bottom-minˢ L))) (bottom-minˢ (semilᵈ D x)))
 
 CtxArg : ℕ → Type₁
 Ctx : (n : ℕ) → CtxArg n → SemiL lzero
