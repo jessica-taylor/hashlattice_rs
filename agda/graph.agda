@@ -244,19 +244,23 @@ module _ (K : TotalOrder lzero) where
     record KCtxArgSuc (n : ℕ) : Type₁ where
       inductive
       field
-        key : elᵗ K
         butlast : KCtxArg n
+        key : elᵗ K
         D : SemiLᵈ (KCtx n butlast) lzero
 
-    KCtxArg : ℕ → Type₁
-    KCtxArg 0 = UnitL (lsuc lzero)
-    KCtxArg (suc n) = KCtxArgSuc n
+    
+    data KCtxArg : ℕ → Type₁ where
+      kctxarg-empty : KCtxArg 0
+      kctxarg-rcons : {n : ℕ} → KCtxArgSuc n → KCtxArg (suc n)
+    -- KCtxArg : ℕ → Type₁
+    -- KCtxArg 0 = UnitL (lsuc lzero)
+    -- KCtxArg (suc n) = KCtxArgSuc n
 
     KCtx : (n : ℕ) → KCtxArg n → SemiL lzero
-    KCtx 0 <> = onepointˢ
-    KCtx (suc n) arg-suc = Σ-SemiL (KCtx n (KCtxArgSuc.butlast arg-suc)) (KCtxArgSuc.D arg-suc)
+    KCtx 0 kctxarg-empty = onepointˢ
+    KCtx (suc n) (kctxarg-rcons arg-suc) = Σ-SemiL (KCtx n (KCtxArgSuc.butlast arg-suc)) (KCtxArgSuc.D arg-suc)
 
-  kctx-rcons-bot : (n : ℕ) → (arg-suc : KCtxArgSuc n) → elˢ (KCtx n (KCtxArgSuc.butlast arg-suc)) → elˢ (KCtx (suc n) arg-suc)
+  kctx-rcons-bot : (n : ℕ) → (arg-suc : KCtxArgSuc n) → elˢ (KCtx n (KCtxArgSuc.butlast arg-suc)) → elˢ (KCtx (suc n) (kctxarg-rcons arg-suc))
   kctx-rcons-bot n arg-suc ctx = (ctx , bottomˢ (semilᵈ (KCtxArgSuc.D arg-suc) ctx))
 
 
