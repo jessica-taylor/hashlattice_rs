@@ -1,4 +1,4 @@
-{-# OPTIONS --cubical --guardedness #-}
+{-# OPTIONS --cubical --guardedness --rewriting #-}
 
 module graph where
 
@@ -14,6 +14,8 @@ open import Cubical.Foundations.Everything public
 open import Cubical.Data.Nat
 open import Cubical.Data.Sigma
 open import Cubical.Data.Sigma.Base using (_×_) public
+
+{-# BUILTIN REWRITE _≡_ #-}
 
 private
   variable
@@ -146,6 +148,12 @@ record SemiL ℓ : Type (lsuc ℓ) where
   idemˢ : (x : elˢ) → x ∨ˢ x ≡ x
   idemˢ x = antisymmˢ (glueˢ reflˢ reflˢ) (inlˢ x x)
 
+  join-bottom-lˢ : (x : elˢ) → bottomˢ ∨ˢ x ≡ x
+  join-bottom-lˢ x = antisymmˢ (glueˢ bottom-minˢ reflˢ) (inrˢ _ _)
+
+  join-bottom-rˢ : (x : elˢ) → x ∨ˢ bottomˢ ≡ x
+  join-bottom-rˢ x = commˢ x bottomˢ ∙ join-bottom-lˢ x
+
 open SemiL
 
 onepointˢ : SemiL lzero
@@ -161,6 +169,15 @@ inrˢ onepointˢ _ _ = tt
 glueˢ onepointˢ _ _ = tt
 bottomˢ onepointˢ = tt
 bottom-minˢ onepointˢ = tt
+
+record SemiLMor {ℓ : Level} (S1 : SemiL ℓ) (S2 : SemiL ℓ) : Type ℓ where
+  field
+    trˢᵐ : elˢ S1 → elˢ S2
+    tr-joinˢᵐ : {x y : elˢ S1} → trˢᵐ (joinˢ S1 x y) ≡ joinˢ S2 (trˢᵐ x) (trˢᵐ y)
+    tr-bottomˢᵐ : trˢᵐ (bottomˢ S1) ≡ bottomˢ S2
+
+open SemiLMor
+  
 
 -- maybeˢ : {ℓ : Level} → (L : SemiL ℓ) → SemiL ℓ
 -- elᵖ (partialˢ (maybeˢ L)) = Maybe (elˢ L)
@@ -198,11 +215,21 @@ bottom-minˢ onepointˢ = tt
 record SemiLᵈ {ℓ₁} (L : SemiL ℓ₁) ℓ₂ : Type (lsuc ℓ₁ ⊔ lsuc ℓ₂) where
   field
     semilᵈ : (x : elˢ L) → SemiL ℓ₂
-    trᵈ : {x y : elˢ L} → leqˢ L x y → (x' : elˢ (semilᵈ x)) → elˢ (semilᵈ y)
+    morᵈ : {x y : elˢ L} → leqˢ L x y → SemiLMor (semilᵈ x) (semilᵈ y)
+
+  
+  trᵈ : {x y : elˢ L} → leqˢ L x y → (x' : elˢ (semilᵈ x)) → elˢ (semilᵈ y)
+  trᵈ x≤y = trˢᵐ (morᵈ x≤y)
+
+  tr-joinᵈ : {x y : elˢ L} → (x≤y : leqˢ L x y) → (x' x'' : elˢ (semilᵈ x)) → trᵈ x≤y (joinˢ (semilᵈ x) x' x'') ≡ joinˢ (semilᵈ y) (trᵈ x≤y x') (trᵈ x≤y x'')
+  tr-joinᵈ x≤y x' x'' = tr-joinˢᵐ (morᵈ x≤y)
+
+  tr-bottomᵈ : {x y : elˢ L} → (x≤y : leqˢ L x y) → trᵈ x≤y (bottomˢ (semilᵈ x)) ≡ bottomˢ (semilᵈ y)
+  tr-bottomᵈ x≤y = tr-bottomˢᵐ (morᵈ x≤y)
+
+  field
     idᵈ : {x : elˢ L} → (x' : elˢ (semilᵈ x)) → trᵈ (reflˢ L) x' ≡ x'
     compᵈ : {x y z : elˢ L} → (x≤y : leqˢ L x y) → (y≤z : leqˢ L y z) → (x' : elˢ (semilᵈ x)) → trᵈ y≤z (trᵈ x≤y x') ≡ trᵈ (transˢ L x≤y y≤z) x'
-    distrᵈ : {x y : elˢ L} → (x≤y : leqˢ L x y) → (x' x'' : elˢ (semilᵈ x)) → trᵈ x≤y (joinˢ (semilᵈ x) x' x'') ≡ joinˢ (semilᵈ y) (trᵈ x≤y x') (trᵈ x≤y x'')
-    tr-bottomᵈ : {x y : elˢ L} → (x≤y : leqˢ L x y) → trᵈ x≤y (bottomˢ (semilᵈ x)) ≡ bottomˢ (semilᵈ y)
 
 open SemiLᵈ
 
@@ -236,9 +263,6 @@ CtxArg (suc n) = Σ (CtxArg n) (λ arg → SemiLᵈ (Ctx n arg) lzero)
 Ctx 0 <> = onepointˢ
 Ctx (suc n) (arg-n , D) = Σ-SemiL (Ctx n arg-n) D
 
-pair : {A B : Type₁} → A → B → A × B
-pair a b = a , b
-
 module _ (K : TotalOrder lzero) where
   mutual
     record KCtxArgSuc (n : ℕ) : Type₁ where
@@ -248,20 +272,24 @@ module _ (K : TotalOrder lzero) where
         key : elᵗ K
         D : SemiLᵈ (KCtx n butlast) lzero
 
-    
     data KCtxArg : ℕ → Type₁ where
       kctxarg-empty : KCtxArg 0
       kctxarg-rcons : {n : ℕ} → KCtxArgSuc n → KCtxArg (suc n)
-    -- KCtxArg : ℕ → Type₁
-    -- KCtxArg 0 = UnitL (lsuc lzero)
-    -- KCtxArg (suc n) = KCtxArgSuc n
 
     KCtx : (n : ℕ) → KCtxArg n → SemiL lzero
     KCtx 0 kctxarg-empty = onepointˢ
     KCtx (suc n) (kctxarg-rcons arg-suc) = Σ-SemiL (KCtx n (KCtxArgSuc.butlast arg-suc)) (KCtxArgSuc.D arg-suc)
 
-  kctx-rcons-bot : (n : ℕ) → (arg-suc : KCtxArgSuc n) → elˢ (KCtx n (KCtxArgSuc.butlast arg-suc)) → elˢ (KCtx (suc n) (kctxarg-rcons arg-suc))
-  kctx-rcons-bot n arg-suc ctx = (ctx , bottomˢ (semilᵈ (KCtxArgSuc.D arg-suc) ctx))
+  -- kctx-rcons-bot : (n : ℕ) → (arg-suc : KCtxArgSuc n) → elˢ (KCtx n (KCtxArgSuc.butlast arg-suc)) → elˢ (KCtx (suc n) (kctxarg-rcons arg-suc))
+  -- kctx-rcons-bot n arg-suc ctx = (ctx , bottomˢ (semilᵈ (KCtxArgSuc.D arg-suc) ctx))
+  kctx-rcons-bot : (n : ℕ) → (arg-suc : KCtxArgSuc n) → SemiLMor (KCtx n (KCtxArgSuc.butlast arg-suc)) (KCtx (suc n) (kctxarg-rcons arg-suc))
+  trˢᵐ (kctx-rcons-bot n arg-suc) ctx = (ctx , bottomˢ (semilᵈ (KCtxArgSuc.D arg-suc) ctx))
+  tr-joinˢᵐ (kctx-rcons-bot n arg-suc) {x = x} {y = y} =
+    Σ-≡-intro (refl , {!!}) -- bottomˢ (semilᵈ (KCtxArgSuc.D arg-suc) (joinˢ (KCtx n (KCtxArgSuc.butlast arg-suc)) x y))
+                     -- ≡⟨ ? ⟩
+                     -- ?)
+  tr-bottomˢᵐ (kctx-rcons-bot n arg-suc) = refl
+                      
 
 
 -- record TotalOrder {ℓ} (T : Type ℓ) : Type ℓ where
