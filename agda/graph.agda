@@ -148,11 +148,17 @@ record SemiL ℓ : Type (lsuc ℓ) where
   idemˢ : (x : elˢ) → x ∨ˢ x ≡ x
   idemˢ x = antisymmˢ (glueˢ reflˢ reflˢ) (inlˢ x x)
 
+  join-≤-lˢ : {x y : elˢ} → x ≤ˢ y → x ∨ˢ y ≡ y
+  join-≤-lˢ x≤y = antisymmˢ (glueˢ x≤y reflˢ) (inrˢ _ _)
+
+  join-≤-rˢ : {x y : elˢ} → x ≤ˢ y → y ∨ˢ x ≡ y
+  join-≤-rˢ x≤y = commˢ _ _ ∙ join-≤-lˢ x≤y
+
   join-bottom-lˢ : (x : elˢ) → bottomˢ ∨ˢ x ≡ x
-  join-bottom-lˢ x = antisymmˢ (glueˢ bottom-minˢ reflˢ) (inrˢ _ _)
+  join-bottom-lˢ x = join-≤-lˢ bottom-minˢ
 
   join-bottom-rˢ : (x : elˢ) → x ∨ˢ bottomˢ ≡ x
-  join-bottom-rˢ x = commˢ x bottomˢ ∙ join-bottom-lˢ x
+  join-bottom-rˢ x = commˢ _ _ ∙ join-bottom-lˢ x
 
 open SemiL
 
@@ -175,6 +181,11 @@ record SemiLMor {ℓ : Level} (S1 : SemiL ℓ) (S2 : SemiL ℓ) : Type ℓ where
     trˢᵐ : elˢ S1 → elˢ S2
     tr-joinˢᵐ : {x y : elˢ S1} → trˢᵐ (joinˢ S1 x y) ≡ joinˢ S2 (trˢᵐ x) (trˢᵐ y)
     tr-bottomˢᵐ : trˢᵐ (bottomˢ S1) ≡ bottomˢ S2
+
+  tr-≤ˢᵐ : {x y : elˢ S1} → leqˢ S1 x y → leqˢ S2 (trˢᵐ x) (trˢᵐ y)
+  tr-≤ˢᵐ {x} {y} x≤y =
+    let eq = transport (cong (λ j → trˢᵐ j ≡ _) (join-≤-lˢ S1 x≤y)) tr-joinˢᵐ in
+    transport (cong (λ y' → leqˢ S2 (trˢᵐ x) y') (sym eq)) (inlˢ S2 (trˢᵐ x) (trˢᵐ y))
 
 open SemiLMor
   
@@ -233,6 +244,18 @@ record SemiLᵈ {ℓ₁} (L : SemiL ℓ₁) ℓ₂ : Type (lsuc ℓ₁ ⊔ lsuc 
 
 open SemiLᵈ
 
+transᵈ : {ℓ₁ ℓ₂ : Level} {L1 L2 : SemiL ℓ₁} → SemiLMor L1 L2 → (D : SemiLᵈ L2 ℓ₂) → SemiLᵈ L1 ℓ₂
+semilᵈ (transᵈ mor D) x = semilᵈ D (trˢᵐ mor x)
+trˢᵐ (morᵈ (transᵈ mor D) x≤y) x' = trᵈ D (tr-≤ˢᵐ mor x≤y) x'
+tr-joinˢᵐ (morᵈ (transᵈ mor D) x≤y) = tr-joinᵈ D (tr-≤ˢᵐ mor x≤y) _ _
+tr-bottomˢᵐ (morᵈ (transᵈ mor D) x≤y) = tr-bottomᵈ D (tr-≤ˢᵐ mor x≤y)
+idᵈ (transᵈ {L2 = L2} mor D) x' = transport (cong (λ x≤y → trᵈ D x≤y x' ≡ x') (leq-propˢ L2 _ _)) (idᵈ D x')
+compᵈ (transᵈ {L2 = L2} mor D) x≤y y≤z x' =
+  let x≤y' = tr-≤ˢᵐ mor x≤y
+      y≤z' = tr-≤ˢᵐ mor y≤z
+      foo = compᵈ D x≤y' y≤z' x'
+  in transport (cong (λ a → trᵈ D y≤z' (trᵈ D x≤y' _) ≡ trᵈ D a x') (leq-propˢ L2 _ _)) foo
+
 -- maybeᵈ : {ℓ₁ ℓ₂ : Level} → (L : SemiL ℓ₁) → (D : SemiLᵈ L ℓ₂) → SemiLᵈ L ℓ₂
 -- semilᵈ (maybeᵈ L D) x = maybeˢ (semilᵈ D x)
 -- trᵈ (maybeᵈ L D) x≤y nothing = nothing
@@ -285,9 +308,10 @@ module _ (K : TotalOrder lzero) where
   kctx-rcons-bot : (n : ℕ) → (arg-suc : KCtxArgSuc n) → SemiLMor (KCtx n (KCtxArgSuc.butlast arg-suc)) (KCtx (suc n) (kctxarg-rcons arg-suc))
   trˢᵐ (kctx-rcons-bot n arg-suc) ctx = (ctx , bottomˢ (semilᵈ (KCtxArgSuc.D arg-suc) ctx))
   tr-joinˢᵐ (kctx-rcons-bot n arg-suc) {x = x} {y = y} =
-    Σ-≡-intro (refl , {!!}) -- bottomˢ (semilᵈ (KCtxArgSuc.D arg-suc) (joinˢ (KCtx n (KCtxArgSuc.butlast arg-suc)) x y))
-                     -- ≡⟨ ? ⟩
-                     -- ?)
+    let ctx-semil = KCtx n (KCtxArgSuc.butlast arg-suc)
+        semil-d = KCtxArgSuc.D arg-suc
+        semil = semilᵈ semil-d (joinˢ ctx-semil x y)
+    in Σ-≡-intro (refl , sym (join-bottom-lˢ semil (bottomˢ semil)) ∙ sym (cong₂ (joinˢ semil) (tr-bottomᵈ semil-d (inlˢ ctx-semil _ _)) (tr-bottomᵈ semil-d (inrˢ ctx-semil _ _))))
   tr-bottomˢᵐ (kctx-rcons-bot n arg-suc) = refl
                       
 
