@@ -72,14 +72,24 @@ transSubset (no rest) s = no (transSubset rest s)
 transSubset (yes r1) (no r2) = no (transSubset r1 r2)
 transSubset (yes r1) (yes r2) = yes (transSubset r1 r2)
 
+idTransSubset : {n m : ℕ} → (s : Subset n m) → transSubset (idSubset n) s ≡ s
+idTransSubset done = refl
+idTransSubset (no rest) = cong no (idTransSubset rest)
+idTransSubset (yes rest) = cong yes (idTransSubset rest)
+
+transIdSubset : {n m : ℕ} → (s : Subset n m) → transSubset s (idSubset m) ≡ s
+transIdSubset done = refl
+transIdSubset (no rest) = cong no (transIdSubset rest)
+transIdSubset (yes rest) = cong yes (transIdSubset rest)
+
 subsetVar : {n m : ℕ} → Subset n m → Fin m → Fin n
 subsetVar (no rest) k = suc (subsetVar rest k)
 subsetVar (yes rest) zero = zero
 subsetVar (yes rest) (suc k) = suc (subsetVar rest k)
 
-subsetVarRefl : {n : ℕ} → (v : Fin n) → subsetVar (idSubset n) v ≡ v
-subsetVarRefl zero = refl
-subsetVarRefl (suc n) = cong suc (subsetVarRefl n)
+subsetVarId : {n : ℕ} → (v : Fin n) → subsetVar (idSubset n) v ≡ v
+subsetVarId zero = refl
+subsetVarId (suc n) = cong suc (subsetVarId n)
 
 subsetVarTrans : {x y z : ℕ} → (sxy : Subset x y) → (syz : Subset y z) → (v : Fin z) → subsetVar sxy (subsetVar syz v) ≡ subsetVar (transSubset sxy syz) v
 subsetVarTrans done done v with v
@@ -98,14 +108,14 @@ subsetExpr s (App A B) = App (subsetExpr s A) (subsetExpr s B)
 subsetExpr s (Lambda A) = Lambda (subsetExpr (yes s) A)
 subsetExpr s (Pair A B) = Pair (subsetExpr s A) (subsetExpr s B)
 
-subsetExprRefl : {n : ℕ} → (e : Expr n) → subsetExpr (idSubset n) e ≡ e
-subsetExprRefl U = refl
-subsetExprRefl (Var v) = cong Var (subsetVarRefl v)
-subsetExprRefl (Pi A B) = cong₂ Pi (subsetExprRefl A) (subsetExprRefl B)
-subsetExprRefl (Sigma A B) = cong₂ Sigma (subsetExprRefl A) (subsetExprRefl B)
-subsetExprRefl (App A B) = cong₂ App (subsetExprRefl A) (subsetExprRefl B)
-subsetExprRefl (Lambda A) = cong Lambda (subsetExprRefl A)
-subsetExprRefl (Pair A B) = cong₂ Pair (subsetExprRefl A) (subsetExprRefl B)
+subsetExprId : {n : ℕ} → (e : Expr n) → subsetExpr (idSubset n) e ≡ e
+subsetExprId U = refl
+subsetExprId (Var v) = cong Var (subsetVarId v)
+subsetExprId (Pi A B) = cong₂ Pi (subsetExprId A) (subsetExprId B)
+subsetExprId (Sigma A B) = cong₂ Sigma (subsetExprId A) (subsetExprId B)
+subsetExprId (App A B) = cong₂ App (subsetExprId A) (subsetExprId B)
+subsetExprId (Lambda A) = cong Lambda (subsetExprId A)
+subsetExprId (Pair A B) = cong₂ Pair (subsetExprId A) (subsetExprId B)
 
 subsetExprTrans : {x y z : ℕ} → (sxy : Subset x y) → (syz : Subset y z) → (e : Expr z) → subsetExpr sxy (subsetExpr syz e) ≡ subsetExpr (transSubset sxy syz) e
 subsetExprTrans _ _ U = refl
@@ -130,9 +140,47 @@ data PreCtxSubset : {n m : ℕ} → Subset n m → PreCtx m → PreCtx n → Typ
   ctx-no : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} {t : Expr n} → PreCtxSubset s c1 c2 → PreCtxSubset (no s) c1 (c2 ⊹ t)
   ctx-yes : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} {t : Expr m} → PreCtxSubset s c1 c2 → PreCtxSubset (yes s) (c1 ⊹ t) (c2 ⊹ subsetExpr s t)
 
-subsetPreCtxRefl : {n : ℕ} → (c : PreCtx n) → PreCtxSubset (idSubset n) c c
-subsetPreCtxRefl ∅ = ctx-done
-subsetPreCtxRefl {n = suc n} (c ⊹ t) = transport (cong (λ x → PreCtxSubset (yes (idSubset n)) (c ⊹ t) (c ⊹ x)) (subsetExprRefl _)) (ctx-yes (subsetPreCtxRefl c))
+subsetPreCtxId : {n : ℕ} → (c : PreCtx n) → PreCtxSubset (idSubset n) c c
+subsetPreCtxId ∅ = ctx-done
+subsetPreCtxId {n = suc n} (c ⊹ t) = transport (cong (λ x → PreCtxSubset (yes (idSubset n)) (c ⊹ t) (c ⊹ x)) (subsetExprId _)) (ctx-yes (subsetPreCtxId c))
+
+subsetPreCtxIx : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} → PreCtxSubset s c1 c2 → (v : Fin m) → preCtxIx (subsetVar s v) c2 ≡ subsetExpr s (preCtxIx v c1)
+subsetPreCtxIx {n = suc n} {s = no s} {c1 = c1} {c2 = c2 ⊹ t2} (ctx-no rest) v =
+  let inner = subsetPreCtxIx rest v in
+  subsetExpr (no (idSubset n)) (preCtxIx (subsetVar s v) c2)
+  ≡⟨ cong (λ x → subsetExpr _ x) inner ⟩ 
+  subsetExpr (no (idSubset n)) (subsetExpr s (preCtxIx v c1))
+  ≡⟨ subsetExprTrans _ _ _ ⟩
+  subsetExpr (no (transSubset (idSubset n) s)) (preCtxIx v c1)
+  ≡⟨ cong (λ x → subsetExpr (no x) _) (idTransSubset _) ⟩
+  subsetExpr (no s) (preCtxIx v c1) ∎
+
+subsetPreCtxIx {n = suc n} {m = suc m} {s = yes s} {c1 = c1 ⊹ e1} (ctx-yes _) zero =
+  subsetExpr (no (idSubset n)) (subsetExpr s e1)
+  ≡⟨ subsetExprTrans _ _ _ ⟩
+  subsetExpr (no (transSubset (idSubset n) s)) e1
+  ≡⟨ cong (λ x → subsetExpr (no x) _) (idTransSubset _) ⟩
+  subsetExpr (no s) e1
+  ≡⟨ cong (λ x → subsetExpr (no x) e1) (sym (transIdSubset _)) ⟩
+  subsetExpr (no (transSubset s (idSubset m))) e1
+  ≡⟨ sym (subsetExprTrans _ _ _) ⟩
+  subsetExpr (yes s) (subsetExpr (no (idSubset m)) e1)
+  ∎
+
+subsetPreCtxIx {n = suc n} {m = suc m} {s = yes s} {c1 = c1 ⊹ _} {c2 = c2 ⊹ _} (ctx-yes rest) (suc v) =
+  let inner = subsetPreCtxIx rest v in
+  subsetExpr (no (idSubset n)) (preCtxIx (subsetVar s v) c2)
+  ≡⟨ cong (λ x → subsetExpr _ x) inner ⟩
+  subsetExpr (no (idSubset n)) (subsetExpr s (preCtxIx v c1))
+  ≡⟨ subsetExprTrans _ _ _ ⟩
+  subsetExpr (no (transSubset (idSubset n) s)) (preCtxIx v c1)
+  ≡⟨ cong (λ x → subsetExpr (no x) _) (idTransSubset _) ⟩
+  subsetExpr (no s) (preCtxIx v c1)
+  ≡⟨ cong (λ x → subsetExpr (no x) _) (sym (transIdSubset _)) ⟩
+  subsetExpr (no (transSubset s (idSubset m))) (preCtxIx v c1)
+  ≡⟨ sym (subsetExprTrans _ _ _) ⟩
+  subsetExpr (yes s) (subsetExpr (no (idSubset m)) (preCtxIx v c1))
+  ∎
 
 data IsCtx : {n : ℕ} → PreCtx n → Type
 
@@ -161,40 +209,26 @@ CtxSubset s (c1 , _) (c2 , _) = PreCtxSubset s c1 c2
 
 subsetTy : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} → PreCtxSubset s c1 c2 → Ty c1 → Ty c2
 
+IsVariable : {n : ℕ} → (c : PreCtx n) → Expr n → Fin n → Type
+IsVariable c t k = preCtxIx k c ≡ t
 
 Variable : {n : ℕ} → (c : PreCtx n) → Expr n → Type
-Variable {n} c t = Σ (Fin n) (λ k → preCtxIx k c ≡ t)
+Variable {n} c t = Σ (Fin n) (IsVariable c t)
 
-subsetVariable : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} {t : Expr m} → (cs : PreCtxSubset s c1 c2) → Variable c1 t → Variable c2 (subsetExpr s t)
-subsetVariable {n = suc n} {s = no s} {c1 = c1} {c2 = c2 ⊹ t2} {t = t} (ctx-no rest) v =
-  let (inner-k , inner-is-t) = subsetVariable rest v
-  in (suc inner-k ,
-        (subsetExpr (no (idSubset n)) (preCtxIx (fst (subsetVariable rest v)) c2)
-        ≡⟨ cong (λ x → subsetExpr _ x) inner-is-t ⟩
-        subsetExpr (no (idSubset n)) (subsetExpr s t)
-        ≡⟨ {!!} ⟩
-        subsetExpr (no s) t
-        ∎))
+subsetIsVariable : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} {t : Expr m} → (cs : PreCtxSubset s c1 c2) → (v : Variable c1 t) → IsVariable c2 (subsetExpr s t) (subsetVar s (fst v))
+subsetIsVariable {s = s} {c1 = c1} {c2 = c2} {t = t} cs (v , v-is) =
+  preCtxIx (subsetVar s v) c2
+  ≡⟨ subsetPreCtxIx cs v ⟩
+  subsetExpr s (preCtxIx v c1)
+  ≡⟨ cong (subsetExpr s) v-is ⟩
+  subsetExpr s t
+  ∎
+
 
 -- data Variable : {n : ℕ} → (c : PreCtx n) → Expr n → Type where
 --   vZ : {n : ℕ} {c : PreCtx n} {t : Expr n} → Variable (c ⊹ t) (subsetExpr (no (idSubset n)) t)
 --   vS : {n : ℕ} {c : PreCtx n} {t t' : Expr n} → Variable c t → Variable (c ⊹ t') (subsetExpr (no (idSubset n)) t)
 
--- subsetVariable : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} {t : Expr m} → (cs : PreCtxSubset s c1 c2) → Variable c1 t → Variable c2 (subsetExpr s t)
--- subsetVariable {n = suc n} {s = s} {c2 = c2 ⊹ t2} {t = t} (ctx-no rest) v =
---   let substInner = subsetVariable rest v in
---   {!vS ?!}
--- subsetVariable {m = m} {c2 = c2 ⊹ t} (ctx-yes rest) vZ = {!!}
--- subsetVariable (ctx-yes rest) (vS v) =
---   let substInner = subsetVariable rest v in
---   {!!}
-
--- subsetVariable : {n m : ℕ} {s : Subset n m} {c1 : Ctx m} {c2 : Ctx n} {t : Ty c1} → (cs : CtxSubset s c1 c2) → Variable c1 t → Variable c2 (subsetTy cs t)
--- subsetVariable (ctx-no rest) k = {!vS ?!}
--- subsetVariable (ctx-yes rest) vZ = {!!}
--- subsetVar (no rest) k = suc (subsetVar rest k)
--- subsetVar (yes rest) zero = zero
--- subsetVar (yes rest) (suc k) = suc (subsetVar rest k)
 
 -- Uᵗ : {n : ℕ} {c : Ctx n} → Ty c
 
