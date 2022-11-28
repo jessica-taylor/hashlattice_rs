@@ -10,6 +10,7 @@ open import Data.Bool using (Bool; true; false; not; if_then_else_) public
 open import Data.Maybe using (Maybe; just; nothing) public
 open import Cubical.Core.Everything public
 open import Cubical.Foundations.Everything public
+open import Relation.Nullary using (¬_)
 
 open import Cubical.Data.Nat
 open import Cubical.Data.Sigma
@@ -94,6 +95,7 @@ record TotalOrder ℓ : Type (lsuc ℓ) where
 
   field
     connectedᵗ : (x y : elᵗ) → x ≤ᵗ y ⊎ y ≤ᵗ x
+    decide-eqᵗ : (x y : elᵗ) → x ≡ y ⊎ ¬ (x ≡ y)
 
 open TotalOrder
 
@@ -176,7 +178,7 @@ glueˢ onepointˢ _ _ = tt
 bottomˢ onepointˢ = tt
 bottom-minˢ onepointˢ = tt
 
-record SemiLMor {ℓ : Level} (S1 : SemiL ℓ) (S2 : SemiL ℓ) : Type ℓ where
+record SemiLMor {ℓ : Level} (S1 S2 : SemiL ℓ) : Type ℓ where
   field
     trˢᵐ : elˢ S1 → elˢ S2
     tr-joinˢᵐ : {x y : elˢ S1} → trˢᵐ (joinˢ S1 x y) ≡ joinˢ S2 (trˢᵐ x) (trˢᵐ y)
@@ -188,6 +190,9 @@ record SemiLMor {ℓ : Level} (S1 : SemiL ℓ) (S2 : SemiL ℓ) : Type ℓ where
     transport (cong (λ y' → leqˢ S2 (trˢᵐ x) y') (sym eq)) (inlˢ S2 (trˢᵐ x) (trˢᵐ y))
 
 open SemiLMor
+
+SemiLMorInv : {ℓ : Level} {S1 S2 : SemiL ℓ} (there : SemiLMor S1 S2) (back : SemiLMor S2 S1) → Type ℓ
+SemiLMorInv {S1 = S1} there back = (orig : elˢ S1) → trˢᵐ back (trˢᵐ there orig) ≡ orig
   
 
 -- maybeˢ : {ℓ : Level} → (L : SemiL ℓ) → SemiL ℓ
@@ -232,8 +237,8 @@ record SemiLᵈ {ℓ₁} (L : SemiL ℓ₁) ℓ₂ : Type (lsuc ℓ₁ ⊔ lsuc 
   trᵈ : {x y : elˢ L} → leqˢ L x y → (x' : elˢ (semilᵈ x)) → elˢ (semilᵈ y)
   trᵈ x≤y = trˢᵐ (morᵈ x≤y)
 
-  tr-joinᵈ : {x y : elˢ L} → (x≤y : leqˢ L x y) → (x' x'' : elˢ (semilᵈ x)) → trᵈ x≤y (joinˢ (semilᵈ x) x' x'') ≡ joinˢ (semilᵈ y) (trᵈ x≤y x') (trᵈ x≤y x'')
-  tr-joinᵈ x≤y x' x'' = tr-joinˢᵐ (morᵈ x≤y)
+  tr-joinᵈ : {x y : elˢ L} → (x≤y : leqˢ L x y) → {x' x'' : elˢ (semilᵈ x)} → trᵈ x≤y (joinˢ (semilᵈ x) x' x'') ≡ joinˢ (semilᵈ y) (trᵈ x≤y x') (trᵈ x≤y x'')
+  tr-joinᵈ x≤y = tr-joinˢᵐ (morᵈ x≤y)
 
   tr-bottomᵈ : {x y : elˢ L} → (x≤y : leqˢ L x y) → trᵈ x≤y (bottomˢ (semilᵈ x)) ≡ bottomˢ (semilᵈ y)
   tr-bottomᵈ x≤y = tr-bottomˢᵐ (morᵈ x≤y)
@@ -247,7 +252,7 @@ open SemiLᵈ
 transᵈ : {ℓ₁ ℓ₂ : Level} {L1 L2 : SemiL ℓ₁} → SemiLMor L1 L2 → (D : SemiLᵈ L2 ℓ₂) → SemiLᵈ L1 ℓ₂
 semilᵈ (transᵈ mor D) x = semilᵈ D (trˢᵐ mor x)
 trˢᵐ (morᵈ (transᵈ mor D) x≤y) x' = trᵈ D (tr-≤ˢᵐ mor x≤y) x'
-tr-joinˢᵐ (morᵈ (transᵈ mor D) x≤y) = tr-joinᵈ D (tr-≤ˢᵐ mor x≤y) _ _
+tr-joinˢᵐ (morᵈ (transᵈ mor D) x≤y) = tr-joinᵈ D (tr-≤ˢᵐ mor x≤y)
 tr-bottomˢᵐ (morᵈ (transᵈ mor D) x≤y) = tr-bottomᵈ D (tr-≤ˢᵐ mor x≤y)
 idᵈ (transᵈ {L2 = L2} mor D) x' = transport (cong (λ x≤y → trᵈ D x≤y x' ≡ x') (leq-propˢ L2 _ _)) (idᵈ D x')
 compᵈ (transᵈ {L2 = L2} mor D) x≤y y≤z x' =
@@ -287,32 +292,114 @@ Ctx 0 <> = onepointˢ
 Ctx (suc n) (arg-n , D) = Σ-SemiL (Ctx n arg-n) D
 
 module _ (K : TotalOrder lzero) where
+
   mutual
-    record KCtxArgSuc (n : ℕ) : Type₁ where
-      inductive
-      field
-        butlast : KCtxArg n
-        key : elᵗ K
-        D : SemiLᵈ (KCtx n butlast) lzero
+    data KeyList : Type where
+      kl-empty : KeyList
+      kl-rcons : (butlast : KeyList) → (k : elᵗ K) → is-next-key butlast k → KeyList
 
-    data KCtxArg : ℕ → Type₁ where
-      kctxarg-empty : KCtxArg 0
-      kctxarg-rcons : {n : ℕ} → KCtxArgSuc n → KCtxArg (suc n)
+    -- TODO this allows duplicates??
+    is-next-key : KeyList → elᵗ K → Type
+    is-next-key kl-empty _ = Unit
+    is-next-key (kl-rcons _ k _) k' = leqᵗ K k k'
 
-    KCtx : (n : ℕ) → KCtxArg n → SemiL lzero
-    KCtx 0 kctxarg-empty = onepointˢ
-    KCtx (suc n) (kctxarg-rcons arg-suc) = Σ-SemiL (KCtx n (KCtxArgSuc.butlast arg-suc)) (KCtxArgSuc.D arg-suc)
+  leq-KeyList : KeyList → KeyList → Type
+  leq-KeyList kl-empty _ = Unit
+  leq-KeyList (kl-rcons _ _ _) kl-empty = ⊥
+  leq-KeyList l1@(kl-rcons butlast1 k1 _) (kl-rcons butlast2 k2 _) with decide-eqᵗ K k1 k2
+  ... | inj₁ eq = leq-KeyList butlast1 butlast2
+  ... | inj₂ neq with connectedᵗ K k1 k2
+  ...   | inj₁ k1≤k2 = leq-KeyList l1 butlast2
+  ...   | inj₂ k2≤k1 = ⊥
 
-  -- kctx-rcons-bot : (n : ℕ) → (arg-suc : KCtxArgSuc n) → elˢ (KCtx n (KCtxArgSuc.butlast arg-suc)) → elˢ (KCtx (suc n) (kctxarg-rcons arg-suc))
-  -- kctx-rcons-bot n arg-suc ctx = (ctx , bottomˢ (semilᵈ (KCtxArgSuc.D arg-suc) ctx))
-  kctx-rcons-bot : (n : ℕ) → (arg-suc : KCtxArgSuc n) → SemiLMor (KCtx n (KCtxArgSuc.butlast arg-suc)) (KCtx (suc n) (kctxarg-rcons arg-suc))
-  trˢᵐ (kctx-rcons-bot n arg-suc) ctx = (ctx , bottomˢ (semilᵈ (KCtxArgSuc.D arg-suc) ctx))
-  tr-joinˢᵐ (kctx-rcons-bot n arg-suc) {x = x} {y = y} =
-    let ctx-semil = KCtx n (KCtxArgSuc.butlast arg-suc)
-        semil-d = KCtxArgSuc.D arg-suc
-        semil = semilᵈ semil-d (joinˢ ctx-semil x y)
-    in Σ-≡-intro (refl , sym (join-bottom-lˢ semil (bottomˢ semil)) ∙ sym (cong₂ (joinˢ semil) (tr-bottomᵈ semil-d (inlˢ ctx-semil _ _)) (tr-bottomᵈ semil-d (inrˢ ctx-semil _ _))))
-  tr-bottomˢᵐ (kctx-rcons-bot n arg-suc) = refl
+  leq-prop-KeyList : (l1 l2 : KeyList) → isProp (leq-KeyList l1 l2)
+  leq-prop-KeyList kl-empty _ _ _ = refl
+  leq-prop-KeyList (kl-rcons _ _ _) kl-empty bot = ⊥-elim bot
+  leq-prop-KeyList l1@(kl-rcons butlast1 k1 _) (kl-rcons butlast2 k2 _) with decide-eqᵗ K k1 k2
+  ... | inj₁ eq = leq-prop-KeyList butlast1 butlast2
+  ... | inj₂ neq with connectedᵗ K k1 k2
+  ...   | inj₁ k1≤k2 = leq-prop-KeyList l1 butlast2
+  ...   | inj₂ k2≤k1 = (λ bot → ⊥-elim bot)
+
+  refl-KeyList : (l : KeyList) → leq-KeyList l l
+  refl-KeyList kl-empty = tt
+  refl-KeyList (kl-rcons butlast k _) with decide-eqᵗ K k k
+  ... | inj₁ eq = refl-KeyList butlast
+  ... | inj₂ neq = ⊥-elim (neq refl)
+
+  leq-KeyList-rcons : (l : KeyList) → {k : elᵗ K} {is-next : is-next-key l k} → leq-KeyList l (kl-rcons l k is-next)
+  leq-KeyList-rcons kl-empty = tt
+  leq-KeyList-rcons (kl-rcons butlast k' is-next') {k = k} {is-next = is-next} with decide-eqᵗ K k' k
+  ... | inj₁ _ = leq-KeyList-rcons butlast
+  ... | inj₂ neq with connectedᵗ K k' k
+  ...   | inj₁ k'<k = refl-KeyList (kl-rcons butlast k' is-next')
+  ...   | inj₂ k'>k = neq (antisymmᵗ K is-next k'>k)
+
+  trans-KeyList : {l1 l2 l3 : KeyList} → leq-KeyList l1 l2 → leq-KeyList l2 l3 → leq-KeyList l1 l3
+  trans-KeyList {l1 = kl-empty} _ _ = tt
+  trans-KeyList {l1 = kl-rcons _ _ _} {l2 = kl-empty} l1≤l2 _ = ⊥-elim l1≤l2
+  trans-KeyList {l2 = kl-rcons _ _ _} {l3 = kl-empty} _ l2≤l3 = ⊥-elim l2≤l3
+  trans-KeyList {l1 = kl-rcons butlast1 k1 _} {l2 = kl-rcons butlast2 k2 _} {l3 = kl-rcons butlast3 k3 _} l1≤l2 l2≤l3 with decide-eqᵗ K k1 k3
+  ... | inj₁ l1=l3 with decide-eqᵗ K k1 k2
+  ...   | inj₁ l1=l2 with decide-eqᵗ K k2 k3
+  ...     | inj₁ l2=l3 = trans-KeyList {l1 = butlast1} {l2 = butlast2} {l3 = butlast3} l1≤l2 l2≤l3
+  ...     | inj₂ l2/=l3 with connectedᵗ K k2 k3
+  ...       | inj₁ l2<l3 = {!!}
+  ...       | inj₂ l2>l3 = ⊥-elim l2≤l3
+  ... | inj₂ l1/=l2 = {!!}
+  ... | inj₂ neq = {!!}
+
+  KeyListˢ : SemiL lzero
+  elᵖ (partialˢ KeyListˢ) = KeyList
+  leqᵖ (partialˢ KeyListˢ) = leq-KeyList 
+  leq-propᵖ (partialˢ KeyListˢ) {x = x} {y = y} = leq-prop-KeyList x y
+  reflᵖ (partialˢ KeyListˢ) {x = x} = refl-KeyList x
+  transᵖ (partialˢ KeyListˢ) x≤y y≤z = {!!}
+
+  mutual
+
+    data KCtxArg : KeyList → Type₁ where
+      kca-empty : KCtxArg kl-empty
+      kca-rcons : {butlast : KeyList} → (k : elᵗ K) → (is-next : is-next-key butlast k) → (butlast-arg : KCtxArg butlast) → SemiLᵈ (KCtx butlast-arg) lzero → KCtxArg (kl-rcons butlast k is-next)
+
+    KCtx : {kl : KeyList} → KCtxArg kl → SemiL lzero
+    KCtx kca-empty = onepointˢ
+    KCtx (kca-rcons _ _ butlast-arg D) = Σ-SemiL (KCtx butlast-arg) D
+
+  kctx-rcons-bot : {butlast : KeyList} (k : elᵗ K) → (is-next : is-next-key butlast k) → (butlast-arg : KCtxArg butlast) → (D : SemiLᵈ (KCtx butlast-arg) lzero) → SemiLMor (KCtx butlast-arg) (KCtx (kca-rcons k is-next butlast-arg D))
+  trˢᵐ (kctx-rcons-bot k is-next butlast-arg D) ctx = (ctx , bottomˢ (semilᵈ D ctx))
+  tr-joinˢᵐ (kctx-rcons-bot k is-next butlast-arg D) {x = x} {y = y} =
+    let ctx-semil = KCtx butlast-arg
+        semil = semilᵈ D (joinˢ ctx-semil x y)
+    in Σ-≡-intro (refl , sym (join-bottom-lˢ semil (bottomˢ semil)) ∙ sym (cong₂ (joinˢ semil) (tr-bottomᵈ D (inlˢ ctx-semil _ _)) (tr-bottomᵈ D (inrˢ ctx-semil _ _))))
+  tr-bottomˢᵐ (kctx-rcons-bot _ _ _ _) = refl
+
+  kctx-drop-last : {butlast : KeyList} → (k : elᵗ K) → (is-next : is-next-key butlast k) → (butlast-arg : KCtxArg butlast) → (D : SemiLᵈ (KCtx butlast-arg) lzero) → SemiLMor (KCtx (kca-rcons k is-next butlast-arg D)) (KCtx butlast-arg)
+  trˢᵐ (kctx-drop-last _ _ _ _) (ctx , _) = ctx
+  tr-joinˢᵐ (kctx-drop-last _ _ _ _) = refl
+  tr-bottomˢᵐ (kctx-drop-last _ _ _ _) = refl
+
+  kctx-rcons-inv : {butlast : KeyList} (k : elᵗ K) → (is-next : is-next-key butlast k) → (butlast-arg : KCtxArg butlast) → (D : SemiLᵈ (KCtx butlast-arg) lzero) → SemiLMorInv (kctx-rcons-bot k is-next butlast-arg D) (kctx-drop-last k is-next butlast-arg D)
+  kctx-rcons-inv _ _ _ _ _ = refl
+
+    
+--   kctx-rcons-inv : (n : ℕ) → (arg-suc : KCtxArgSuc n) → SemiLMorInv (kctx-rcons-bot arg-suc) (kctx-drop-last arg-suc)
+--   kctx-rcons-inv n arg-suc ctx = refl
+--     record KCtxArgSuc (n : ℕ) : Type₁ where
+--       inductive
+--       field
+--         butlast : KCtxArg n
+--         key : elᵗ K
+--         D : SemiLᵈ (KCtx n butlast) lzero
+-- 
+--     data KCtxArg : ℕ → Type₁ where
+--       kctxarg-empty : KCtxArg 0
+--       kctxarg-rcons : {n : ℕ} → KCtxArgSuc n → KCtxArg (suc n)
+-- 
+--     KCtx : (n : ℕ) → KCtxArg n → SemiL lzero
+--     KCtx 0 kctxarg-empty = onepointˢ
+--     KCtx (suc n) (kctxarg-rcons arg-suc) = Σ-SemiL (KCtx n (KCtxArgSuc.butlast arg-suc)) (KCtxArgSuc.D arg-suc)
+-- 
                       
 
 

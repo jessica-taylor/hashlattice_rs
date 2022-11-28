@@ -27,8 +27,6 @@ impl SignalServer {
         SignalServer { peer_streams }
     }
     pub async fn listen(self: Arc<Self>, addr: &str) -> Res<()> {
-        let addr = "127.0.0.1:2020";
-
         // Create the event loop and TCP listener we'll accept connections on.
         let listener = TcpListener::bind(&addr).await?;
         println!("Listening on: {}", addr);
