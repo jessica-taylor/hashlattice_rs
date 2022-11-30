@@ -15,6 +15,79 @@ open import Cubical.Foundations.Everything public
 open import Relation.Nullary using (¬_)
 open import Cubical.Data.Sigma
 
+-- Semi : Semilattice
+--   if A : Semi, a₁, a₂, a₂ : A
+--   then we have _∨_ : A → A → A, ⊥ : A
+--   such that a₁ ∨ a₂ = a₂ ∨ a₁
+--   and (a₁ ∨ a₂) ∨ a₃ = a₁ ∨ (a₂ ∨ a₃)
+--   and a₁ ∨ a₁ = a₁
+--   and a₁ ∨ ⊥ = a₁
+--   we define a₁ ≤ a₂ ⇔ a₁ ∨ a₂ = a₂
+-- let A, B : Semi
+--
+-- A →ˢ B : Semilattice morphism
+--   if a₁, a₂ : A, f : A →ˢ B
+--   then f(a₁ ∨ a₂) = f(a₁) ∨ f(a₂)
+--   and f(⊥) = ⊥
+--   this forms a semilattice
+--     in that, if g : A →ˢ B, then (f ∨ g)(a₁) = f a₁ ∨ g a₁
+--
+-- A →ᵈ Semi : Dependent semilattice
+--   if d : A →ᵈ Semi,
+--   then we have tr : (a₁ : A) → (a₂ : A) → {a₁ ≤ a₂} → (b : d a₁) → d a₂
+--   and dmor : (a₁ : A) → (a₂ : A) → {a₁ ≤ a₂} → d a₁ →ˢ d a₂
+--   such that if a₁, a₂, a₃ : A, a₁ ≤ a₂, a₂ ≤ a₃, b : d(a₁)
+--   then tr a₁ a₁ = id
+--   and tr a₂ a₃ (tr a₁ a₂ b₁) = tr a₁ a₃ b₁
+-- let C : A →ᵈ Semi
+--
+-- Semi →ᵉ Semi : Semilattice endofunctor
+--   if e : Semi →ᵉ Semi,
+--   then we have map : (A B : Semi) → (A →ˢ B) → e A →ˢ e B
+--   such that if A, B, C: Semi, ab : A →ˢ B, bc : B →ˢ C
+--   then map A A idˢ = idˢ
+--   and map B C bc (map A B ab) = bc ∘ˢ ab
+-- let E : Semi →ᵉ Semi
+--
+-- gen E : Generic semilattice value
+--   if g : gen E, represented by a function (A : Semi) → E A,
+--   then we have tr : (A B : Semi) → (A →ˢ B) → g A → g B
+--   such that if A, B, C : Semi, ab : A →ˢ B, bc : A →ˢ C,
+--   then tr A A id = id
+--   and tr B C ∘ tr A B = tr A C
+--   this forms a semilattice
+--     in that, if h : gen E, then (g ∨ h)(A) = g A ∨ h A
+--  
+--
+-- tot (C : A →ᵈ Semi) : Total space (also a semilattice)
+--   if t : tot C,
+--   then we have π₁ : A
+--   and π₂ : C π₁
+--
+-- mor (C : A →ᵈ Semi) : Dependent semilattice morphism
+--   if f : mor C, represented by a function (a : A) → C a,
+--     a₁, a₂ : A, b₁ : C a₁, b₂ : C a₂
+--   then f(a₁ ∨ a₂) = tr a₁ (a₁ ∨ a₂) b₁ ∨ tr a₂ (a₁ ∨ a₂) b₂
+--   and f(⊥) = ⊥
+--   this forms a semilattice
+--     in that, if g : mor D, then (f ∨ g)(a₁) = f(a₁) ∨ g(a₁)
+--
+-- can we generalize???
+-- consider a function to some type
+-- if f : B → tot C, we can split it into f₁ : B → A, f₂ : B → (a : A) → C a
+-- if we continue splitting like this, we get a list of functions each of whose return value
+-- is either Semi or some specific semilattice (which may depend on previous arguments)
+-- the basic rule is:
+--   if the last is some specific semilattice: we're making a dependent semilattice morphism
+--     in this case, we care about the dependency of the joins of the result on the joins of the previous arguments that have joins
+--   if the last is Semi: we're making a dependent semilattice / endofunctor combination
+--     in this case, we don't care about joins of arguments, we consider the arguments as categories
+--
+-- hmm...can we collapse this somehow?
+--  note that dependent semilattices are like generic semilattice morphisms
+--  we only need the category structure, we can drop the semilattice structure, of the argument
+--  
+
 private
   variable
     ℓ ℓ₁ ℓ₂ ℓ₃ ℓ₄ : Level
@@ -36,6 +109,7 @@ data Expr where
   App : {n : ℕ} → Expr n → Expr n → Expr n
   Lambda : {n : ℕ} → Expr (suc n) → Expr n
   Pair : {n : ℕ} → Expr n → Expr (suc n) → Expr n
+  MatchPair : {n : ℕ} → Expr n → Expr (suc (suc n)) → Expr n
 
 -- preCtxTrunc : (c : PreCtx) → Fin (suc (preCtxLen c)) → PreCtx
 -- preCtxTrunc c zero = c
@@ -104,28 +178,30 @@ weakenExpr _ U = U
 weakenExpr s (Var v) = Var (weakenVar s v)
 weakenExpr s (Pi A B) = Pi (weakenExpr s A) (weakenExpr (yes s) B)
 weakenExpr s (Sigma A B) = Sigma (weakenExpr s A) (weakenExpr (yes s) B)
-weakenExpr s (App A B) = App (weakenExpr s A) (weakenExpr s B)
-weakenExpr s (Lambda A) = Lambda (weakenExpr (yes s) A)
-weakenExpr s (Pair A B) = Pair (weakenExpr s A) (weakenExpr (yes s) B)
+weakenExpr s (App f x) = App (weakenExpr s f) (weakenExpr s x)
+weakenExpr s (Lambda body) = Lambda (weakenExpr (yes s) body)
+weakenExpr s (Pair fst snd) = Pair (weakenExpr s fst) (weakenExpr (yes s) snd)
+weakenExpr s (MatchPair pair body) = MatchPair (weakenExpr s pair) (weakenExpr (yes (yes s)) body)
 
 weakenExprId : {n : ℕ} → (e : Expr n) → weakenExpr (idSubset n) e ≡ e
 weakenExprId U = refl
 weakenExprId (Var v) = cong Var (weakenVarId v)
 weakenExprId (Pi A B) = cong₂ Pi (weakenExprId A) (weakenExprId B)
 weakenExprId (Sigma A B) = cong₂ Sigma (weakenExprId A) (weakenExprId B)
-weakenExprId (App A B) = cong₂ App (weakenExprId A) (weakenExprId B)
-weakenExprId (Lambda A) = cong Lambda (weakenExprId A)
-weakenExprId (Pair A B) = cong₂ Pair (weakenExprId A) (weakenExprId B)
+weakenExprId (App f x) = cong₂ App (weakenExprId f) (weakenExprId x)
+weakenExprId (Lambda body) = cong Lambda (weakenExprId body)
+weakenExprId (Pair fst snd) = cong₂ Pair (weakenExprId fst) (weakenExprId snd)
+weakenExprId (MatchPair pair body) = cong₂ MatchPair (weakenExprId pair) (weakenExprId body)
 
 weakenExprTrans : {x y z : ℕ} → (sxy : Subset x y) → (syz : Subset y z) → (e : Expr z) → weakenExpr sxy (weakenExpr syz e) ≡ weakenExpr (transSubset sxy syz) e
 weakenExprTrans _ _ U = refl
 weakenExprTrans sxy syz (Var v) = cong Var (weakenVarTrans sxy syz v)
 weakenExprTrans sxy syz (Pi A B) = cong₂ Pi (weakenExprTrans sxy syz A) (weakenExprTrans (yes sxy) (yes syz) B)
 weakenExprTrans sxy syz (Sigma A B) = cong₂ Sigma (weakenExprTrans sxy syz A) (weakenExprTrans (yes sxy) (yes syz) B)
-weakenExprTrans sxy syz (App A B) = cong₂ App (weakenExprTrans sxy syz A) (weakenExprTrans sxy syz B)
-weakenExprTrans sxy syz (Lambda A) = cong Lambda (weakenExprTrans (yes sxy) (yes syz) A)
-weakenExprTrans sxy syz (Pair A B) = cong₂ Pair (weakenExprTrans sxy syz A) (weakenExprTrans (yes sxy) (yes syz) B)
-
+weakenExprTrans sxy syz (App f x) = cong₂ App (weakenExprTrans sxy syz f) (weakenExprTrans sxy syz x)
+weakenExprTrans sxy syz (Lambda body) = cong Lambda (weakenExprTrans (yes sxy) (yes syz) body)
+weakenExprTrans sxy syz (Pair fst snd) = cong₂ Pair (weakenExprTrans sxy syz fst) (weakenExprTrans (yes sxy) (yes syz) snd)
+weakenExprTrans sxy syz (MatchPair pair body) = cong₂ MatchPair (weakenExprTrans sxy syz pair) (weakenExprTrans (yes (yes sxy)) (yes (yes syz)) body)
 
 preCtxIx' : {n : ℕ} → (k : Fin n) → PreCtx n → Expr (finComplement k)
 preCtxIx' {n = suc n} zero (_ ⊹ t) = weakenExpr (no (idSubset n)) t
@@ -242,17 +318,52 @@ weakenIsTy cs (Sigma-ty A-ty B-ty) = Sigma-ty (weakenIsTy cs A-ty) (weakenIsTy (
 weakenTy : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} → PreCtxSubset s c1 c2 → Ty c1 → Ty c2
 weakenTy {s = s} cs (t , t-ty) = (weakenExpr s t , weakenIsTy cs t-ty)
 
+data Subst : {n m : ℕ} → Subset n m → PreCtx m → PreCtx n → Type where
+  done-subst : Subst done ∅ ∅
+  no-subst : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} {e2 : Expr n} → Subst s c1 c2 → Expr n → Subst (no s) c1 (c2 ⊹ e2)
+  yes-subst : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} {e1 : Expr m} {e2 : Expr n} → Subst s c1 c2 → Subst (yes s) (c1 ⊹ e1) (c2 ⊹ e2)
+  -- TODO in yes check e1 e2 relation??
+
+
+-- substVar : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} → Subst s c1 c2 → Fin m → Expr n
+-- substVar done-subst v with v
+-- ... | ()
+-- substVar {n = suc n} (no-subst rest e) zero = weakenExpr (no (idSubset n)) e
+-- substVar (no-subst rest _) (suc v) = substVar rest v
+-- substVar (yes-subst rest) zero = Var zero
+-- substVar {m = suc m} (yes-subst rest) (suc v) = weakenExpr (no (idSubset m)) (substVar rest v)
+
+--substExpr : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} → Subst s c1 c2 → Expr 
+
 data HasType : {n : ℕ} → (c : PreCtx n) → Expr n → Expr n → Type where
   Var-has : {n : ℕ} {c : PreCtx n} {t : Expr n} → (v : Variable c t) → HasType c (Var (fst v)) t
   Lambda-has : {n : ℕ} {c : PreCtx n} {A : Expr n} {B : Expr (suc n)} {body : Expr (suc n)} →
     HasType (c ⊹ A) body B → HasType c (Lambda body) (Pi A B)
+  -- App-has : {n : ℕ} {c : PreCtx n} {A C : Expr n} {B : Expr (suc n)} {f x : Expr n} →
+  --   HasType c f (Pi A B) → HasType c x A → HasType c (App f x) ???
   Pair-has : {n : ℕ} {c : PreCtx n} {A : Expr n} {B : Expr (suc n)} {fst : Expr n} {snd : Expr (suc n)} →
     HasType c fst A → HasType (c ⊹ A) snd B → HasType c (Pair fst snd) (Sigma A B)
+  MatchPair-has : {n : ℕ} {c : PreCtx n} {A C : Expr n} {B : Expr (suc n)} {pair : Expr n} {body : Expr (suc (suc n))} →
+    HasType c pair (Sigma A B) → HasType ((c ⊹ A) ⊹ B) body (weakenExpr (no (no (idSubset n))) C) → HasType c (MatchPair pair body) C
       
 weakenHasType : {n m : ℕ} {s : Subset n m} {c1 : PreCtx m} {c2 : PreCtx n} {T e : Expr m} → PreCtxSubset s c1 c2 → HasType c1 e T → HasType c2 (weakenExpr s e) (weakenExpr s T)
 weakenHasType cs (Var-has v) = Var-has (weakenVariable cs v)
 weakenHasType cs (Lambda-has body-ty) = Lambda-has (weakenHasType (ctx-yes cs) body-ty)
 weakenHasType cs (Pair-has fst-ty snd-ty) = Pair-has (weakenHasType cs fst-ty) (weakenHasType (ctx-yes cs) snd-ty)
+weakenHasType {n = n} {m = m} {s = s} {T = T} cs (MatchPair-has pair-ty body-ty) =
+  let inner = weakenHasType (ctx-yes (ctx-yes cs)) body-ty
+      double-weaken =
+        weakenExpr (yes (yes s)) (weakenExpr (no (no (idSubset m))) T)
+        ≡⟨ weakenExprTrans _ _ _ ⟩
+        weakenExpr (transSubset (yes (yes s)) (no (no (idSubset m)))) T
+        ≡⟨ cong (λ x → weakenExpr x T) (transIdSubset _) ⟩
+        weakenExpr (no (no s)) T
+        ≡⟨ cong (λ x → weakenExpr (no (no x)) T) (sym (idTransSubset _)) ⟩
+        weakenExpr (no (no (transSubset (idSubset n) s))) T
+        ≡⟨ sym (weakenExprTrans _ _ _) ⟩
+        weakenExpr (no (no (idSubset n))) (weakenExpr s T)
+        ∎
+  in MatchPair-has (weakenHasType cs pair-ty) {!!}
 -- 
 -- Uᵗ = (U , U-is)
 -- 
