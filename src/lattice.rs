@@ -122,7 +122,7 @@ pub trait ComputationLibrary<C: TaggedMapping + 'static> : Send + Sync {
 pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LP: TaggedMapping + 'static> : Send + Sync {
 
     // it's a valid element if check_elem returns a set and each the predicates pass
-    async fn check_elem(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _ctx: Arc<dyn ComputationImmutContext<C>>) -> Res<BTreeSet<LP::Key>> {
+    async fn check_elem(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _ctx: Arc<dyn PredicateImmutContext<C, L, LP>>) -> Res<()> {
         bail!("check_elem not implemented")
     }
 
@@ -136,13 +136,13 @@ pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static,
 
     // computes a lower bound on the lattice given the context
     // should be monotonic in ctx
-    async fn bound(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _ctx: Arc<dyn LatticeMutContext<C, L, LP>>) -> Res<Option<L::Value>> {
-        Ok(None)
-    }
+    // async fn bound(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _ctx: Arc<dyn LatticeMutContext<C, L, LP>>) -> Res<Option<L::Value>> {
+    //     Ok(None)
+    // }
 
     // predicates are like the {0, 1} lattice
     // should be monotonic in ctx
-    async fn check_predicate(self: Arc<Self>, _key: &LP::Key, _ctx: Arc<dyn LatticeImmutContext<C, L, LP>>) -> Res<BTreeSet<LP::Key>> {
+    async fn check_predicate(self: Arc<Self>, _key: &LP::Key, _ctx: Arc<dyn PredicateImmutContext<C, L, LP>>) -> Res<()> {
         bail!("check_predicate not implemented")
     }
 
@@ -151,14 +151,26 @@ pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static,
     // }
 }
 
+pub enum LowerBound<V> {
+    Geq(Option<V>),
+    Gt(Option<V>),
+}
+
 #[async_trait]
-pub trait LatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LP: TaggedMapping> : ComputationImmutContext<C> {
-
-    async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<Option<L::Value>>;
-
+pub trait PredicateImmutContext<C: TaggedMapping, L: TaggedMapping, LP: TaggedMapping> : ComputationImmutContext<C> {
     async fn check_predicate(self: Arc<Self>, key: &LP::Key) -> Res<()>;
 
+    async fn check_lower_bound(self: Arc<Self>, key: &L::Key, lb: LowerBound<L::Value>) -> Res<()>;
 }
+
+// #[async_trait]
+// pub trait LatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LP: TaggedMapping> : ComputationImmutContext<C> {
+// 
+//     async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<Option<L::Value>>;
+// 
+//     async fn check_predicate(self: Arc<Self>, key: &LP::Key) -> Res<()>;
+// 
+// }
 
 // pub trait AsLatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LP: TaggedMapping> : LatticeImmutContext<C, L, LP> {
 //     fn as_lattice_immut_ctx(self: Arc<Self>) -> Arc<dyn LatticeImmutContext<C, L, LP>>;
@@ -175,10 +187,10 @@ pub trait ComputationMutContext<C: TaggedMapping>: HashPut + ComputationImmutCon
 
 }
 
-#[async_trait]
-pub trait LatticeMutContext<C: TaggedMapping, L: TaggedMapping, LP: TaggedMapping>: ComputationMutContext<C> + LatticeImmutContext<C, L, LP> {
-
-}
+// #[async_trait]
+// pub trait LatticeMutContext<C: TaggedMapping, L: TaggedMapping, LP: TaggedMapping>: ComputationMutContext<C> + LatticeImmutContext<C, L, LP> {
+// 
+// }
 
 
 // #[derive(Clone)]
