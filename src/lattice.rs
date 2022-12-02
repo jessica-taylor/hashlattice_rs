@@ -130,8 +130,8 @@ type LatMerkleNodeM<L: TaggedMapping, LC: TaggedMapping, V> = LatMerkleNode<L::K
 #[async_trait]
 pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> : Send + Sync {
 
-    async fn value_deps(self: Arc<Self>, _value: &L::Value) -> Res<LatMerkleDepSetM<L, LC>> {
-        Ok(LatMerkleDepSet::new())
+    async fn value_deps(self: Arc<Self>, _value: &L::Value) -> Res<LatMerkleDepsM<L, LC>> {
+        Ok(LatMerkleDeps::new())
     }
 
     async fn check_elem(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _ctx: Arc<dyn ComputationImmutContext<C>>) -> Res<()> {
