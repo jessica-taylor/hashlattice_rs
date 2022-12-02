@@ -1,5 +1,5 @@
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeSet, BTreeMap};
 use std::sync::Arc;
 
 use anyhow::bail;
@@ -57,31 +57,13 @@ pub trait ComputationLibrary<C: TaggedMapping + 'static> : Send + Sync {
 }
 
 
-#[async_trait]
-pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> : Send + Sync {
-
-    async fn check_elem(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _ctx: Arc<dyn LatticeImmutContext<C, L, LC>>) -> Res<()> {
-        bail!("check_elem not implemented")
-    }
-
-    async fn join(self: Arc<Self>, _key: &L::Key, _a: &L::Value, _b: &L::Value, _ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<L::Value> {
-        bail!("join not implemented")
-    }
-
-    async fn transport(self: Arc<Self>, _key: &L::Key, value: &L::Value, _old_ctx: Arc<dyn LatticeImmutContext<C, L, LC>>, _new_ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<Option<L::Value>> {
-        Ok(Some(value.clone()))
-    }
-
-    async fn eval_lat_computation(self: Arc<Self>, _key: &LC::Key, _ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<LC::Value> {
-        bail!("eval_lat_computation not implemented")
-    }
-}
-
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct LatMerkleDeps<LK: Ord, LV, LCK: Ord, LCV> {
     pub lat_deps: BTreeMap<LK, Hash<LatMerkleNode<LK, LV, LCK, LCV, LV>>>,
     pub lat_comp_deps: BTreeMap<LCK, Hash<LatMerkleNode<LK, LV, LCK, LCV, LCV>>>,
 }
+
+type LatMerkleDepsM<L: TaggedMapping, LC: TaggedMapping> = LatMerkleDeps<L::Key, L::Value, LC::Key, LC::Value>;
 
 impl<LK: Ord, LV, LCK: Ord, LCV> LatMerkleDeps<LK, LV, LCK, LCV> {
     pub fn new() -> Self {
@@ -122,82 +104,121 @@ pub struct LatMerkleNode<LK: Ord, LV, LCK: Ord, LCV, V> {
     pub deps: LatMerkleDeps<LK, LV, LCK, LCV>,
 }
 
+type LatMerkleNodeM<L: TaggedMapping, LC: TaggedMapping, V> = LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, V>;
+
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+pub struct LatMerkleDepSet<LK: Ord, LCK: Ord> {
+    pub lat_deps: BTreeSet<LK>,
+    pub lat_comp_deps: BTreeSet<LCK>,
+}
+
+type LatMerkleDepSetM<L: TaggedMapping, LC: TaggedMapping> = LatMerkleDepSet<L::Key, LC::Key>;
+
+
+#[async_trait]
+pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> : Send + Sync {
+
+    async fn check_elem(self: Arc<Self>, _key: &L::Key, _node: &LatMerkleNodeM<L, LC, L::Value>, _ctx: Arc<dyn ComputationImmutContext<C>>) -> Res<()> {
+        bail!("check_elem not implemented")
+    }
+
+    async fn join(self: Arc<Self>, _key: &L::Key, _a: &L::Value, _b: &L::Value, _deps: &LatMerkleDepsM<L, LC>, _ctx: Arc<dyn ComputationMutContext<C>>) -> Res<(L::Value, LatMerkleDepSetM<L, LC>)> {
+        bail!("join not implemented")
+    }
+
+    async fn transport(self: Arc<Self>, _key: &L::Key, _old_node: &LatMerkleNodeM<L, LC, L::Value>, _ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<Option<(L::Value, LatMerkleDepSetM<L, LC>)>> {
+        Ok(None)
+    }
+
+    async fn eval_lat_computation(self: Arc<Self>, _key: &LC::Key, _ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<LC::Value> {
+        bail!("eval_lat_computation not implemented")
+    }
+}
 
 #[async_trait]
 pub trait LatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> : ComputationImmutContext<C> {
 
-    async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>>;
+    async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<Option<Hash<LatMerkleNodeM<L, LC, L::Value>>>>;
 
-    async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, LC::Value>>>;
+    async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<Hash<LatMerkleNodeM<L, LC, LC::Value>>>;
+
+    // async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>>;
+
+    // async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, LC::Value>>>;
 
 }
 
-pub trait AsLatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> : LatticeImmutContext<C, L, LC> {
-    fn as_lattice_immut_ctx(self: Arc<Self>) -> Arc<dyn LatticeImmutContext<C, L, LC>>;
-}
-
-impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping, T: 'static + LatticeImmutContext<C, L, LC>> AsLatticeImmutContext<C, L, LC> for T {
-    fn as_lattice_immut_ctx(self: Arc<Self>) -> Arc<dyn LatticeImmutContext<C, L, LC>> {
-        self
-    }
-}
+// pub trait AsLatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping> : LatticeImmutContext<C, L, LC> {
+//     fn as_lattice_immut_ctx(self: Arc<Self>) -> Arc<dyn LatticeImmutContext<C, L, LC>>;
+// }
+// 
+// impl<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping, T: 'static + LatticeImmutContext<C, L, LC>> AsLatticeImmutContext<C, L, LC> for T {
+//     fn as_lattice_immut_ctx(self: Arc<Self>) -> Arc<dyn LatticeImmutContext<C, L, LC>> {
+//         self
+//     }
+// }
 
 #[async_trait]
-pub trait LatticeMutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping>: HashPut + LatticeImmutContext<C, L, LC> + AsLatticeImmutContext<C, L, LC> {
-
-}
-
-
-#[derive(Clone)]
-pub struct EmptyComputationLibrary;
-
-impl<C: TaggedMapping + 'static> ComputationLibrary<C> for EmptyComputationLibrary {}
-
-#[derive(Clone)]
-pub struct EmptyLatticeLibrary;
-
-impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeLibrary<C, L, LC> for EmptyLatticeLibrary {}
-
-#[derive(Clone)]
-pub struct EmptyContext;
-
-#[async_trait]
-impl HashLookup for EmptyContext {
-    async fn hash_lookup(self: Arc<Self>, hash: HashCode) -> Res<Vec<u8>> {
-        bail!("EmptyHashLookup: no hash lookup for {:?}", hash)
-    }
-}
-
-#[async_trait]
-impl HashPut for EmptyContext {
-    async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
-        bail!("EmptyComputationMutContext: no hash put for {:?}", value)
-    }
-}
-
-#[async_trait]
-impl<C: TaggedMapping + 'static> ComputationImmutContext<C> for EmptyContext {
-    async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
-        bail!("EmptyComputationImmutContext: no computation for {:?}", key)
-    }
-}
-
-#[async_trait]
-impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeImmutContext<C, L, LC> for EmptyContext {
-
-    async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
-        bail!("EmptyLatticeImmutContext: no lattice lookup for {:?}", key)
-    }
-
-    async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, LC::Value>>> {
-        bail!("EmptyLatticeImmutContext: no lattice computation for {:?}", key)
-    }
+pub trait ComputationMutContext<C: TaggedMapping>: HashPut + ComputationImmutContext<C> {
 
 }
 
 #[async_trait]
-impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeMutContext<C, L, LC> for EmptyContext {
+pub trait LatticeMutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapping>: ComputationMutContext<C> + LatticeImmutContext<C, L, LC> {
+
 }
+
+
+// #[derive(Clone)]
+// pub struct EmptyComputationLibrary;
+// 
+// impl<C: TaggedMapping + 'static> ComputationLibrary<C> for EmptyComputationLibrary {}
+// 
+// #[derive(Clone)]
+// pub struct EmptyLatticeLibrary;
+// 
+// impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeLibrary<C, L, LC> for EmptyLatticeLibrary {}
+// 
+// #[derive(Clone)]
+// pub struct EmptyContext;
+// 
+// #[async_trait]
+// impl HashLookup for EmptyContext {
+//     async fn hash_lookup(self: Arc<Self>, hash: HashCode) -> Res<Vec<u8>> {
+//         bail!("EmptyHashLookup: no hash lookup for {:?}", hash)
+//     }
+// }
+// 
+// #[async_trait]
+// impl HashPut for EmptyContext {
+//     async fn hash_put(self: Arc<Self>, value: Vec<u8>) -> Res<HashCode> {
+//         bail!("EmptyComputationMutContext: no hash put for {:?}", value)
+//     }
+// }
+// 
+// #[async_trait]
+// impl<C: TaggedMapping + 'static> ComputationImmutContext<C> for EmptyContext {
+//     async fn eval_computation(self: Arc<Self>, key: &C::Key) -> Res<C::Value> {
+//         bail!("EmptyComputationImmutContext: no computation for {:?}", key)
+//     }
+// }
+// 
+// #[async_trait]
+// impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeImmutContext<C, L, LC> for EmptyContext {
+// 
+//     async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>> {
+//         bail!("EmptyLatticeImmutContext: no lattice lookup for {:?}", key)
+//     }
+// 
+//     async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, LC::Value>>> {
+//         bail!("EmptyLatticeImmutContext: no lattice computation for {:?}", key)
+//     }
+// 
+// }
+// 
+// #[async_trait]
+// impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> LatticeMutContext<C, L, LC> for EmptyContext {
+// }
 
 struct BytesMapping;
 
