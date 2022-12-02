@@ -56,6 +56,23 @@ pub trait ComputationLibrary<C: TaggedMapping + 'static> : Send + Sync {
     }
 }
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+pub struct LatMerkleDepSet<LK: Ord, LCK: Ord> {
+    pub lat_deps: BTreeSet<LK>,
+    pub lat_comp_deps: BTreeSet<LCK>,
+}
+
+type LatMerkleDepSetM<L: TaggedMapping, LC: TaggedMapping> = LatMerkleDepSet<L::Key, LC::Key>;
+
+impl<LK: Ord, LCK: Ord> LatMerkleDepSet<LK, LCK> {
+    pub fn new() -> Self {
+        LatMerkleDepSet {
+            lat_deps: BTreeSet::new(),
+            lat_comp_deps: BTreeSet::new(),
+        }
+    }
+}
+
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct LatMerkleDeps<LK: Ord, LV, LCK: Ord, LCV> {
@@ -96,7 +113,9 @@ impl<LK: Ord, LV, LCK: Ord, LCV> LatMerkleDeps<LK, LV, LCK, LCV> {
         }
         Ok(())
     }
+
 }
+
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct LatMerkleNode<LK: Ord, LV, LCK: Ord, LCV, V> {
@@ -106,27 +125,24 @@ pub struct LatMerkleNode<LK: Ord, LV, LCK: Ord, LCV, V> {
 
 type LatMerkleNodeM<L: TaggedMapping, LC: TaggedMapping, V> = LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, V>;
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct LatMerkleDepSet<LK: Ord, LCK: Ord> {
-    pub lat_deps: BTreeSet<LK>,
-    pub lat_comp_deps: BTreeSet<LCK>,
-}
-
-type LatMerkleDepSetM<L: TaggedMapping, LC: TaggedMapping> = LatMerkleDepSet<L::Key, LC::Key>;
 
 
 #[async_trait]
 pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> : Send + Sync {
 
-    async fn check_elem(self: Arc<Self>, _key: &L::Key, _node: &LatMerkleNodeM<L, LC, L::Value>, _ctx: Arc<dyn ComputationImmutContext<C>>) -> Res<()> {
+    async fn value_deps(self: Arc<Self>, _value: &L::Value) -> Res<LatMerkleDepSetM<L, LC>> {
+        Ok(LatMerkleDepSet::new())
+    }
+
+    async fn check_elem(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _ctx: Arc<dyn ComputationImmutContext<C>>) -> Res<()> {
         bail!("check_elem not implemented")
     }
 
-    async fn join(self: Arc<Self>, _key: &L::Key, _a: &L::Value, _b: &L::Value, _deps: &LatMerkleDepsM<L, LC>, _ctx: Arc<dyn ComputationMutContext<C>>) -> Res<(L::Value, LatMerkleDepSetM<L, LC>)> {
+    async fn join(self: Arc<Self>, _key: &L::Key, _a: &L::Value, _b: &L::Value, _ctx: Arc<dyn ComputationMutContext<C>>) -> Res<L::Value> {
         bail!("join not implemented")
     }
 
-    async fn transport(self: Arc<Self>, _key: &L::Key, _old_node: &LatMerkleNodeM<L, LC, L::Value>, _ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<Option<(L::Value, LatMerkleDepSetM<L, LC>)>> {
+    async fn transport(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<Option<L::Value>> {
         Ok(None)
     }
 
@@ -141,10 +157,6 @@ pub trait LatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LC: TaggedMapp
     async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<Option<Hash<LatMerkleNodeM<L, LC, L::Value>>>>;
 
     async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<Hash<LatMerkleNodeM<L, LC, LC::Value>>>;
-
-    // async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<Option<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, L::Value>>>>;
-
-    // async fn eval_lat_computation(self: Arc<Self>, key: &LC::Key) -> Res<Hash<LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, LC::Value>>>;
 
 }
 
