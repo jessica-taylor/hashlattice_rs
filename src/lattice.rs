@@ -10,6 +10,16 @@ use crate::error::Res;
 use crate::crypto::{HashCode, Hash};
 use crate::tagged_mapping::{TaggedMapping};
 
+// enum Pattern {
+//     Any,
+//     Data(Vec<u8>),
+//     Branch(String, Vec<Pattern>),
+// }
+// 
+// enum TreeValue {
+//     Data(Vec<u8>),
+//     Branch(String, Vec<TreeValue>),
+// }
 
 #[async_trait]
 pub trait HashLookup : Send + Sync {
@@ -56,23 +66,14 @@ pub trait ComputationLibrary<C: TaggedMapping + 'static> : Send + Sync {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct LatMerkleDepSet<LK: Ord, LCK: Ord> {
-    pub lat_deps: BTreeSet<LK>,
-    pub lat_comp_deps: BTreeSet<LCK>,
+pub enum LowerBound<V> {
+    Geq(Option<V>),
+    Gt(Option<V>),
 }
 
-type LatMerkleDepSetM<L: TaggedMapping, LC: TaggedMapping> = LatMerkleDepSet<L::Key, LC::Key>;
+pub type LatMerkleRequirements<LK: Ord, LV> = BTreeMap<LK, LowerBound<LV>>;
 
-impl<LK: Ord, LCK: Ord> LatMerkleDepSet<LK, LCK> {
-    pub fn new() -> Self {
-        LatMerkleDepSet {
-            lat_deps: BTreeSet::new(),
-            lat_comp_deps: BTreeSet::new(),
-        }
-    }
-}
-
+pub type LatMerkleRequirementsM<L: TaggedMapping> = LatMerkleRequirements<L::Key, L::Value>;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct LatMerkleDeps<LK: Ord, LV, LCK: Ord, LCV> {
@@ -126,23 +127,23 @@ pub struct LatMerkleNode<LK: Ord, LV, LCK: Ord, LCV, V> {
 type LatMerkleNodeM<L: TaggedMapping, LC: TaggedMapping, V> = LatMerkleNode<L::Key, L::Value, LC::Key, LC::Value, V>;
 
 
-
 #[async_trait]
 pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> : Send + Sync {
 
-    async fn value_deps(self: Arc<Self>, _value: &L::Value) -> Res<LatMerkleDepsM<L, LC>> {
-        Ok(LatMerkleDeps::new())
-    }
-
-    async fn check_elem(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _ctx: Arc<dyn ComputationImmutContext<C>>) -> Res<()> {
+    async fn check_elem(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _deps: LatMerkleDepsM<L, LC>, _ctx: Arc<dyn ComputationImmutContext<C>>) -> Res<LatMerkleRequirementsM<L>> {
         bail!("check_elem not implemented")
     }
 
+    // precondition: check_requirements(check_elem(key, deps, a, ctx)) && check_requirements(check_elem(key, deps, b, ctx))
+    // postcondition: check_requirements(check_elem(key, deps, self.join(a, b, ctx), ctx))
+    // postcondition is satisfied if either a or b is returned (total order)
+    // must be commutative, associative, idempotent
     async fn join(self: Arc<Self>, _key: &L::Key, _a: &L::Value, _b: &L::Value, _ctx: Arc<dyn ComputationMutContext<C>>) -> Res<L::Value> {
         bail!("join not implemented")
     }
 
-    async fn transport(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<Option<L::Value>> {
+    // computes a lower bound on the lattice given the context
+    async fn bound(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _ctx: Arc<dyn LatticeMutContext<C, L, LC>>) -> Res<Option<L::Value>> {
         Ok(None)
     }
 
