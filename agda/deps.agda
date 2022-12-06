@@ -70,9 +70,22 @@ record TotalOrder ℓ : Type (lsuc ℓ) where
 
 open TotalOrder
 
-inspec-compareᵗ : (K : TotalOrder lzero) → (x : elᵗ K) → (y : elᵗ K) → Σ Comparison (λ c → compareᵗ K x y ≡ c)
-inspec-compareᵗ K x y with inspec (compareᵗ K x y)
-... | c with≡ eq = (c , eq)
+record SemiLat {ℓ} (S : Type ℓ) : Type ℓ where
+  field
+    joinˢ : S → S → S
+    bottomˢ : S → S → S
+
+  leqˢ : S → S → Type ℓ
+  leqˢ x y = joinˢ x y ≡ y
+
+open SemiLat
+
+record DepSemiLat {ℓ₁ ℓ₂} {S : Type ℓ₁} (L : SemiLat S) (D : S → Type ℓ₂) : Type (ℓ₁ ⊔ ℓ₂) where
+  field
+    semiᵈ : (x : S) → SemiLat (D x)
+    trᵈ : {x y : S} → leqˢ L x y → D x → D y
+
+open DepSemiLat
 
 list-member : {K : Type} → K → List K → Type
 list-member _ [] = ⊥
@@ -120,6 +133,34 @@ pfun-intersection-right = pfun-intersection (λ x y → y)
 
 
   
+
+
+record DepGraph : Type₁ where
+  field
+    keyᵍ : TotalOrder lzero
+    valueᵍ : Type
+    is-elemᵍ : (k : elᵗ keyᵍ) → (elᵗ keyᵍ → Maybe valueᵍ) → (v : valueᵍ) → Type
+
+  elemᵍ : elᵗ keyᵍ → (elᵗ keyᵍ → Maybe valueᵍ) → Type
+  elemᵍ k ctx = Σ valueᵍ (is-elemᵍ k ctx)
+
+  field
+    semilᵍ : (k : elᵗ keyᵍ) → (ctx : elᵗ keyᵍ → Maybe valueᵍ) → SemiLat (elemᵍ k ctx)
+    transportᵍ : (k : elᵗ keyᵍ) → (elᵗ keyᵍ → Maybe valueᵍ) → (elᵗ keyᵍ → Maybe valueᵍ) → valueᵍ → Maybe valueᵍ
+
+  Key<ᵍ : elᵗ keyᵍ → Type
+  Key<ᵍ k = Σ (elᵗ keyᵍ) (λ k' → compareᵗ keyᵍ k' k ≡ LT)
+
+  Key≤ᵍ : elᵗ keyᵍ → Type
+  Key≤ᵍ k = Σ (elᵗ keyᵍ) (λ k' → ¬ (compareᵗ keyᵍ k' k ≡ GT))
+
+  Ctx<ᵍ : elᵗ keyᵍ → Type
+  Ctx<ᵍ k = Key<ᵍ k → Maybe valueᵍ
+
+  Ctx≤ᵍ : elᵗ keyᵍ → Type
+  Ctx≤ᵍ k = Key≤ᵍ k → Maybe valueᵍ
+
+
 -- lt-first : (K : TotalOrder lzero) → elᵗ K → List (elᵗ K) → Type
 -- lt-first K k [] = Unit
 -- lt-first K k (k' ∷ _) = compareᵗ K k k' ≡ LT
@@ -223,123 +264,3 @@ pfun-intersection-right = pfun-intersection (λ x y → y)
 
 -- SortMapOfList : {K : TotalOrder lzero} → SortList K → Type → Type
 -- SortMapOfList ks V = Σ (SortMap K V)
-
-
-record DepGraph : Type₁ where
-  field
-    keyᵍ : TotalOrder lzero
-    valueᵍ : Type
-    bottomᵍ : elᵗ keyᵍ → valueᵍ
-    depsᵍ : elᵗ keyᵍ → valueᵍ → elᵗ keyᵍ → Maybe Unit
-    deps-finᵍ : (k : elᵗ keyᵍ) → (v : valueᵍ) → is-fin-pfun (depsᵍ k v)
-    is-elemᵍ : (k : elᵗ keyᵍ) → (v : valueᵍ) → (d : elᵗ keyᵍ → Maybe valueᵍ) → pfun-subset-domain (depsᵍ k v) d → Type
-    compareᵍ : (k : elᵗ keyᵍ) → (v1 v2 : valueᵍ) → (d : elᵗ keyᵍ → Maybe valueᵍ) →
-      (v1-deps : pfun-subset-domain (depsᵍ k v1) d) → (v2-deps : pfun-subset-domain (depsᵍ k v2) d) →
-      is-elemᵍ k v1 d v1-deps → is-elemᵍ k v2 d v2-deps → Comparison
-    transportᵍ : (k : elᵗ keyᵍ) → (v : valueᵍ) → (d1 d2 : elᵗ keyᵍ → Maybe valueᵍ) → (d1-deps : pfun-subset-domain (depsᵍ k v) d1) → pfun-subset-domain (depsᵍ k v) d2 →
-      is-elemᵍ k v d1 d1-deps → valueᵍ
-    -- let A, B(a : A) be total orders
-    -- transport takes a₁ ≤ a₂, b : B(a₁), produces B(a₂)
-    -- we consider transport2 to take (a₁, b), a₂ and produce (a₂, transport(a₁, a₂, b))
-    -- the condition is that transport2 must be monotonic on its first argument
-    -- where the ordering on pairs is lexicographic
-    -- this condition states:
-    -- if we have a₁ < a₁' < a₂, then transport(a₁, a₂, b) ≤ transport(a₁', a₂, b)
-    -- if we have a₁ < a₂, b ≤ b' : B(a₁), then transport(a₁, a₂, b) ≤ transport(a₁, a₂, b')
-    -- problem: it makes tr kinda redundant? handles bottom wrong?
-    -- we could make an arbitrary function into a monotonic version of itself by:
-    -- g(x) = max(x' ≤ x) f(x)
-    -- however, computing the max may be difficult
-    -- an insight! a monotonic function can be represented as a map from the original set to an equivalence class!
-    -- suppose A, B are total orders
-    -- if f : A -> B is monotonic, then we can construct a function g : B → Set(A) splitting B into equivalence classes
-    -- then, consider f' : A → Codomain(g) which maps an A to the set containing its B
-    -- then, f is monotonic, with Codomain(g) ordered by the corresponding b values
-    -- issue: not all B values are in cod(f)
-    -- ok, idea: a value in a₂ is a pair (a₁ ≤ a₂: A, b : B(a))
-    -- basically representing transporting tr(a₁, a₂, b)
-    -- to compare two values (a₁, b₁), (a₁', b₁'), we compare them using the ordering of max(a₁, a₁')
-    -- this is so transport preserves orderings.
-    -- so, for each a₂, we need to compare it to values (a₁ ≤ a₂, B(a₁))
-    -- in a way that preserves the orderings on the (a₁ ≤ a₂, B(a₁)) values implied by lower a₂
-    -- also...we can collapse some of the orderings on those values with equivalence classes!
-    -- basically, we're promoting an order by collapsing adjacent elements and inserting new ones in some places.
-    -- main condition we need is transitivity
-    -- if we have b₁ at level a₁, b₂ at level a₂, b₃ at level a₃,
-    -- and b₁ < b₂ at a₂,
-    -- then we can't have b₁ < b₃ < b₁ at level a₃.
-    -- hmm... what if we map each b₃ value to 2 value at level a₂ that are ``adjacent''?
-    -- and also give a set of a₂ ranges that are collapsed?
-    -- equivalently: we give a set of equivalence classes over a₂ as ranges.
-    -- then, we assign to each b₃ value, either an equivalence class, or a pair of adjacent ones, or an endpoint.
-    -- we could also provide an equivalence class (disjoint with the other ones and each b₃) that is mapped to ⊥.
-
-    bottom-no-deps : (k d : elᵗ keyᵍ) → depsᵍ k (bottomᵍ k) d ≡ nothing
-    bottom-is-elem : (k : elᵗ keyᵍ) → is-elemᵍ k (bottomᵍ k) (λ _ → nothing) (λ d _ → bottom-no-deps k d)
-
-data BoundaryElem {ℓ : Level} (O : TotalOrder ℓ) : Type ℓ where
-  before : elᵗ O → BoundaryElem O
-  after : elᵗ O → BoundaryElem O
-
-record DepTotalOrder {ℓ : Level} (O : TotalOrder ℓ) : Type (lsuc ℓ) where
-  field
-    new-ordᵈ : elᵗ O → TotalOrder ℓ
-    boundaries : {o₁ o₂ : elᵗ O} → compareᵗ O o₁ o₂ ≡ LT → elᵗ (new-ordᵈ o₂) × List (BoundaryElem (new-ordᵈ o₁) × elᵗ (new-ordᵈ o₂)) -- ascending
-    -- hmm.. it's hard with 2d boundaries. we basically need Pareto frontiers.
-    -- consider the semilattice homomorphisms from a semilattice S to {0, 1}.
-    -- we decide on a set of values to map to 0 and a set to map to 1
-    -- such that, if a ≤ b, then we can't have f(a) = 1, f(b) = 0
-    -- this can be the condition for being > or ≥ some b₃ value.
-    -- hmm... suppose S is A × B where A and B are total orders.
-    -- then, given a : A, we can find the min b value for which f(a, b) = 1
-    -- this minimum must be anti-monotonic in a. but we already have the theory for that!
-    -- if we have a monotonic function from A to B, we can represent that by its graph
-    -- and, can query the graph
-    -- basically, suppose we have A₁..Aₙ, B
-    -- let f be a monotonic function from A₁...Aₙ → B
-    -- we can say this is a monotonic function from A₁..Aₙ, -B → {0, 1}
-    -- which says whether f(a₁...aₙ) ≥ b
-    -- so, wlog, assume B = {0, 1}
-    -- now: the monotonic functions from unit to B are either 0 or 1
-    -- the monotonic functions from A₁ to B are represented by a minimum A₁
-    -- the monotonic functions from A₁, A₂ to B are represented by an anti-monotonic function from A₁ to the minimum A₂
-    --   we can represent this as a function from a threshold A₂ value to the minimum A₁ exceeding that threshold
-    -- the monotonic functions from A₁, A₂, A₃ to B are represented by an anti-monotonic function from A₁, A₂ to the minimum A₃
-    --   we can represent this as a function from a threshold A₃ value to an anti-monotonic function from A₁ to A₂
-    --     we can represent this as a (monotonic? antimonotonic?) function from a threshold A₂ value to the minimum A₁
-    --       we can represent this as a order preserving mapping from A₂ onto A₁
-    -- hmm, let's try again
-    -- let's *not* assume B is {0, 1}
-    -- now, functions from unit to B are just a B value
-    -- monotonic functions from A₁ to B are segmentations of A₁ into intervals and placements of B with respect to those intervals
-    -- monotonic functions from A₁, A₂ to B
-    --   we could segment (A₁, A₂) into Pareto frontiers?
-    --     a specific Pareto frontier is an anti-monotonic function from A₁ to A₂
-    --     but, we need to assign these Pareto frontiers anti-monotonically in B
-    --  here's an approach: we could map each B value to a set of rectangles (⊥, ⊥), (a₁, a₂)
-    --   such that, for f(a₁', a₂') ≥ b, it is sufficient for a₁' < a₁, a₂' < b₂
-    --   basically, union the rectangles
-    --   and, we also union with rectangles of lower b
-    --   showing f(a₁, a₂) ≥ b is now a search problem for a rectangle...
-    --  umm, let's just 80/20 it. tr is id, except it does an is_elem check, and maps to bottom if it's not an elem.
-    --  if we want collapsing, we factor the semilattice, and some semilattices in the factorization get collapsed!
-    --  wait...now do we need is_elem to be monotonic or smth???
-    --  the only effect of tr is to map some elems to bottom...
-    --  we want to avoid a₁ < a₂ < a₃ : A, b₁ : B, tr(a₁, a₂, b₁) = ⊥, tr(a₁, a₃, b₁) ≠ bot
-    -- hmm... what if we first construct the product A × B, then filter on a joint is_elem check???
-    -- problem: our is_elem check has to be monotonic...
-    -- our is_elem checks a B given an A. since we check the A using is_elem for A.
-    -- so we get the same issue as before... dang
-    -- basically: to ensure is_elem is monotonic, we set a maximum A × B value
-    -- assume for now that is_elem is always true of A
-    -- then, for a given A value, we get the minimum B value that passes is_elem. the minimum must be anti-monotonic in A.
-    -- as an alternative to a dependent semilattice of B(a) on A:
-    -- we construct a family of semilattices B(a) for each A
-    -- then, we do a semilattice computation where we first find the best a : A and then find the best b : B(a)
-    -- problem: this doesn't have transports...
-    -- but, maybe we can special case this???
-    -- semilattices are equipped with a computation that finds the lower bound value???
-    -- this gives us auto updates!!
-    -- hmm...pretty nice...
-
-
