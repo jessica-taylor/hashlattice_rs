@@ -39,7 +39,6 @@ data Promote {ℓ₁ ℓ₂} (A : Type ℓ₁) : Type (ℓ₁ ⊔ ℓ₂) where
   promote : A → Promote A
 
 record Category ℓ₁ ℓ₂ : Type (lsuc (ℓ₁ ⊔ ℓ₂)) where
-  constructor MkCategory
   field
     elᶜ : Type ℓ₁
     morᶜ : elᶜ → elᶜ → Type ℓ₂
@@ -61,7 +60,6 @@ comp-idᶜ set-cat _ = refl
 assocᶜ set-cat _ _ _ = refl
 
 record Functor {ℓ₁ ℓ₂ ℓ₃ ℓ₄} (C : Category ℓ₁ ℓ₂) (D : Category ℓ₃ ℓ₄) : Type (ℓ₁ ⊔ ℓ₂ ⊔ ℓ₃ ⊔ ℓ₄) where
-  constructor MkFunctor
   field
     objᶠ : elᶜ C → elᶜ D
     morᶠ : {a b : elᶜ C} → morᶜ C a b → morᶜ D (objᶠ a) (objᶠ b)
@@ -105,7 +103,6 @@ comp-idᶜ (cat-cat ℓ₁ ℓ₂) m = {!!}
 assocᶜ (cat-cat ℓ₁ ℓ₂) cd bc ab = {!!}
 
 record NatTrans {ℓ₁ ℓ₂ ℓ₃ ℓ₄} {C : Category ℓ₁ ℓ₂} {D : Category ℓ₃ ℓ₄} (F G : Functor C D) : Type (ℓ₁ ⊔ ℓ₂ ⊔ ℓ₃ ⊔ ℓ₄) where
-  constructor MkNatTrans
   field
     etaⁿ : (x : elᶜ C) → morᶜ D (objᶠ F x) (objᶠ G x)
     commuteⁿ : {x y : elᶜ C} → (f : morᶜ C x y) → compᶜ D (etaⁿ y) (morᶠ F f) ≡ compᶜ D (morᶠ G f) (etaⁿ x)
@@ -156,11 +153,9 @@ compᶜ (Πᶜ C D) bc ab x = compᶜ (objᶠ D x) (bc x) (ab x)
 id-compᶜ (Πᶜ C D) m = {!!}
 
 record Poset ℓ₁ ℓ₂ : Type (lsuc (ℓ₁ ⊔ ℓ₂)) where
-  constructor MkPoset
   field
     catᵖ : Category ℓ₁ ℓ₂
     leq-propᵖ : (x y : elᶜ catᵖ) → isProp (morᶜ catᵖ x y)
-    antisymmᵖ : {x y : elᶜ catᵖ} → morᶜ catᵖ x y → morᶜ catᵖ y x → x ≡ y
 
   elᵖ : Type ℓ₁
   elᵖ = elᶜ catᵖ
@@ -188,11 +183,6 @@ morᶠ (forgetᵖ _ _) x = x
 mor-idᶠ (forgetᵖ _ _) x = refl
 mor-compᶠ (forgetᵖ _ _) bc ab = refl
 
-poset-mor-poset : {ℓ₁ ℓ₂ : Level} → Poset ℓ₁ ℓ₂ → Poset ℓ₁ ℓ₂ → Poset (ℓ₁ ⊔ ℓ₂) (ℓ₁ ⊔ ℓ₂)
-catᵖ (poset-mor-poset P Q) = func-cat (catᵖ P) (catᵖ Q)
-leq-propᵖ (poset-mor-poset P Q) f g x y =
-  cong₂ MkNatTrans (funExt (λ a → leq-propᵖ Q (objᶠ f a) (objᶠ g a) (etaⁿ x a) (etaⁿ y a)))
-    {!funExt ? !}
 
 DepPoset : {ℓ₁ ℓ₂ : Level} → (P : Poset ℓ₁ ℓ₂) → Type (lsuc (ℓ₁ ⊔ ℓ₂))
 DepPoset {ℓ₁} {ℓ₂} P = Functor (catᵖ P) (poset-cat ℓ₁ ℓ₂)
@@ -201,13 +191,10 @@ DepPoset {ℓ₁} {ℓ₂} P = Functor (catᵖ P) (poset-cat ℓ₁ ℓ₂)
 catᵖ (Σᵖ {ℓ₁} {ℓ₂} P D) = Σᶜ (catᵖ P) (forgetᵖ ℓ₁ ℓ₂ ∘ᶠ D)
 leq-propᵖ (Σᵖ P D) (a , a') (b , b') (x , x') (y , y') = Σ-≡-intro (leq-propᵖ P a b x y , {!!})
 
-Πᵖ : {ℓ₁ ℓ₂ : Level} (P : Poset ℓ₁ ℓ₂) → DepPoset P → Poset ℓ₁ (ℓ₁ ⊔ ℓ₂)
-catᵖ (Πᵖ {ℓ₁} {ℓ₂} P D) = Πᶜ (catᵖ P) (forgetᵖ ℓ₁ ℓ₂ ∘ᶠ D)
-leq-propᵖ (Πᵖ P D) a b x y = funExt (λ p → leq-propᵖ (objᶠ D p) (a p) (b p) (x p) (y p))
-antisymmᵖ (Πᵖ P D) x≤y y≤x = funExt (λ c → antisymmᵖ (objᶠ D c) (x≤y c) (y≤x c))
+-- Πᵖ : {ℓ : Level} (P : Poset ℓ) → DepPoset P → Poset ℓ
+-- catᵖ (Πᵖ {ℓ} P D) = Πᶜ (catᵖ P) (forgetᵖ ℓ ∘ᶠ D)
 
 record SemiLat ℓ₁ ℓ₂ : Type (lsuc (ℓ₁ ⊔ ℓ₂)) where
-  constructor MkSemiLat
   field
     posetˢ : Poset ℓ₁ ℓ₂
     joinˢ : elᵖ posetˢ → elᵖ posetˢ → elᵖ posetˢ
@@ -274,12 +261,7 @@ DepSemiLat {ℓ₁} {ℓ₂} S = Functor (catˢ S) (semi-lat-cat ℓ₁ ℓ₂)
 Σˢ : {ℓ₁ ℓ₂ : Level} → (S : SemiLat ℓ₁ ℓ₂) → DepSemiLat S → SemiLat ℓ₁ ℓ₂
 posetˢ (Σˢ {ℓ₁} {ℓ₂} S D) = Σᵖ (posetˢ S) (forgetˢ ℓ₁ ℓ₂ ∘ᶠ D)
 joinˢ (Σˢ S D) (a , a') (b , b') = (joinˢ S a b , {!!})
-bottomˢ (Σˢ S D) = (bottomˢ S , bottomˢ (objᶠ D (bottomˢ S)))
 
-Πˢ : {ℓ₁ ℓ₂ : Level} → (S : SemiLat ℓ₁ ℓ₂) → DepSemiLat S → SemiLat ℓ₁ (ℓ₁ ⊔ ℓ₂)
-posetˢ (Πˢ {ℓ₁} {ℓ₂} S D) = Πᵖ (posetˢ S) (forgetˢ ℓ₁ ℓ₂ ∘ᶠ D)
-joinˢ (Πˢ S D) a b x = joinˢ (objᶠ D x) (a x) (b x)
-bottomˢ (Πˢ S D) x = bottomˢ (objᶠ D x)
 
 SemiLatEndo : (ℓ₁ ℓ₂ : Level) → Type (lsuc (ℓ₁ ⊔ ℓ₂))
 SemiLatEndo ℓ₁ ℓ₂ = Functor (semi-lat-cat ℓ₁ ℓ₂) (semi-lat-cat ℓ₁ ℓ₂)
