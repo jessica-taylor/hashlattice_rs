@@ -69,22 +69,6 @@ impl<CK: Ord, LK: Ord + Clone, LV, LCK: Ord + Clone, LCV> LatDeps<CK, LK, LV, LC
             lat_comp_deps: self.lat_comp_deps.clone(),
         }
     }
-    pub async fn union_dep_set<C: TaggedMapping<Key = CK>, L: TaggedMapping<Key = LK, Value = LV>, LC: TaggedMapping<Key = LCK, Value = LCV>>(mut self, dep_set: LatMerkleDepSetM<L, LC>, ctx: Arc<dyn LatticeImmutContext<C, L, LC>>) -> Res<Self> {
-        for k in dep_set.lat_deps {
-            if !self.lat_deps.contains_key(&k) {
-                if let Some(hash_node) = ctx.clone().lattice_lookup(&k).await? {
-                    self.lat_deps.insert(k, hash_node);
-                }
-            }
-        }
-        for k in dep_set.lat_comp_deps {
-            if !self.lat_comp_deps.contains_key(&k) {
-                let h = ctx.clone().eval_lat_computation(&k).await?;
-                self.lat_comp_deps.insert(k, h);
-            }
-        }
-        Ok(self)
-    }
 }
 
 impl<CK: Ord + Clone, LK: Ord + Clone, LV, LCK: Ord + Clone, LCV> LatDeps<CK, LK, LV, LCK, LCV> {
@@ -258,13 +242,12 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
             None => {
                 self.get_db().clear_value_deps(&db_key)?;
             }
-            Some((tr_value, tr_deps_set)) => {
+            Some(tr_value) => {
                 let tr_value2 = tr_value.clone();
                 let lat_lib = self.lat_lib.clone();
                 let ((), tr_deps) = LatDepsTracker::with_get_deps(self, move |this| async move {
                     lat_lib.check_elem(&key, &tr_value2, this).await
                 }).await?;
-                tr_deps = tr_deps.union_deps_set(tr_deps_set, self.clone()).await?;
                 let merkle_hash = hash_put_generic(self, &LatMerkleNode {
                     value: tr_value,
                     deps: tr_deps.to_merkle_deps(),
@@ -382,11 +365,10 @@ impl<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping +
         let lat_comp_key = LatDBKey::LatComputation(key.clone());
         if self.get_db().is_dirty(&lat_comp_key)? {
             self.get_db().clear_value_deps(&lat_comp_key)?;
-        } else {
-            let db_value = self.get_db().get_value(&lat_comp_key)?;
-            if let Some(LatDBValue::LatComputation(merkle_hash)) = db_value {
-                return Ok(merkle_hash);
-            }
+        }
+        let db_value = self.get_db().get_value(&lat_comp_key)?;
+        if let Some(LatDBValue::LatComputation(merkle_hash)) = db_value {
+            return Ok(merkle_hash);
         }
         let key2 = key.clone();
         let lat_lib = self.lat_lib.clone();
