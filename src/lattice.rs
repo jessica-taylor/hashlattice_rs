@@ -66,56 +66,56 @@ pub trait ComputationLibrary<C: TaggedMapping + 'static> : Send + Sync {
     }
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct LatMerkleDeps<LK: Ord, LV, LPK: Ord> {
-    pub lat_deps: BTreeMap<LK, Hash<LatMerkleNode<LK, LV, LPK, LV>>>,
-    pub pred_deps: BTreeMap<LPK, Hash<LatMerkleDeps<LK, LV, LPK>>>,
-}
-
-type LatMerkleDepsM<L: TaggedMapping, LP: TaggedMapping> = LatMerkleDeps<L::Key, L::Value, LP::Key>;
-
-impl<LK: Ord, LV, LPK: Ord> LatMerkleDeps<LK, LV, LPK> {
-    pub fn new() -> Self {
-        LatMerkleDeps {
-            lat_deps: BTreeMap::new(),
-            pred_deps: BTreeMap::new(),
-        }
-    }
-    pub fn is_empty(&self) -> bool {
-        self.lat_deps.is_empty() && self.pred_deps.is_empty()
-    }
-    pub fn try_union(&mut self, other: Self) -> Res<()> {
-        for (k, v) in other.lat_deps {
-            if let Some(v2) = self.lat_deps.get(&k) {
-                if v != *v2 {
-                    bail!("lat_deps conflict")
-                }
-            } else {
-                self.lat_deps.insert(k, v);
-            }
-        }
-        for (k, v) in other.pred_deps {
-            if let Some(v2) = self.pred_deps.get(&k) {
-                if v != *v2 {
-                    bail!("pred_deps conflict")
-                }
-            } else {
-                self.pred_deps.insert(k, v);
-            }
-        }
-        Ok(())
-    }
-
-}
-
-
-#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct LatMerkleNode<LK: Ord, LV, LPK: Ord, V> {
-    pub value: V,
-    pub deps: LatMerkleDeps<LK, LV, LPK>,
-}
-
-type LatMerkleNodeM<L: TaggedMapping, LP: TaggedMapping, V> = LatMerkleNode<L::Key, L::Value, LP::Key, V>;
+// #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+// pub struct LatMerkleDeps<LK: Ord, LV, LPK: Ord, LPV> {
+//     pub lat_deps: BTreeMap<LK, Hash<LatMerkleNode<LK, LV, LPK, LPV, LV>>>,
+//     pub lat_comp_deps: BTreeMap<LPK, Hash<LatMerkleNode<LK, LV, LPK, LPV, LPV>>>,
+// }
+// 
+// type LatMerkleDepsM<L: TaggedMapping, LP: TaggedMapping> = LatMerkleDeps<L::Key, L::Value, LP::Key, LP::Value>;
+// 
+// impl<LK: Ord, LV, LPK: Ord, LPV> LatMerkleDeps<LK, LV, LPK, LPV> {
+//     pub fn new() -> Self {
+//         LatMerkleDeps {
+//             lat_deps: BTreeMap::new(),
+//             lat_comp_deps: BTreeMap::new(),
+//         }
+//     }
+//     pub fn is_empty(&self) -> bool {
+//         self.lat_deps.is_empty() && self.lat_comp_deps.is_empty()
+//     }
+//     pub fn try_union(&mut self, other: Self) -> Res<()> {
+//         for (k, v) in other.lat_deps {
+//             if let Some(v2) = self.lat_deps.get(&k) {
+//                 if v != *v2 {
+//                     bail!("lat_deps conflict")
+//                 }
+//             } else {
+//                 self.lat_deps.insert(k, v);
+//             }
+//         }
+//         for (k, v) in other.lat_comp_deps {
+//             if let Some(v2) = self.lat_comp_deps.get(&k) {
+//                 if v != *v2 {
+//                     bail!("lat_comp_deps conflict")
+//                 }
+//             } else {
+//                 self.lat_comp_deps.insert(k, v);
+//             }
+//         }
+//         Ok(())
+//     }
+// 
+// }
+// 
+// 
+// #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+// pub struct LatMerkleNode<LK: Ord, LV, LPK: Ord, LPV, V> {
+//     pub value: V,
+//     pub deps: LatMerkleDeps<LK, LV, LPK, LPV>,
+// }
+// 
+// type LatMerkleNodeM<L: TaggedMapping, LP: TaggedMapping, V> = LatMerkleNode<L::Key, L::Value, LP::Key, LP::Value, V>;
 
 
 #[async_trait]
@@ -165,14 +165,14 @@ pub trait PredicateImmutContext<C: TaggedMapping, L: TaggedMapping, LP: TaggedMa
     async fn check_lower_bound(self: Arc<Self>, key: &L::Key, lb: LowerBound<L::Value>) -> Res<()>;
 }
 
-#[async_trait]
-pub trait LatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LP: TaggedMapping> : PredicateImmutContext<C, L, LP> {
-
-    async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<Option<LatMerkleNodeM<L, LP, L::Value>>>;
-
-    async fn predicate_deps(self: Arc<Self>, key: &LP::Key) -> Res<Option<LatMerkleDepsM<L, LP>>>;
-
-}
+// #[async_trait]
+// pub trait LatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LP: TaggedMapping> : ComputationImmutContext<C> {
+// 
+//     async fn lattice_lookup(self: Arc<Self>, key: &L::Key) -> Res<Option<L::Value>>;
+// 
+//     async fn check_predicate(self: Arc<Self>, key: &LP::Key) -> Res<()>;
+// 
+// }
 
 // pub trait AsLatticeImmutContext<C: TaggedMapping, L: TaggedMapping, LP: TaggedMapping> : LatticeImmutContext<C, L, LP> {
 //     fn as_lattice_immut_ctx(self: Arc<Self>) -> Arc<dyn LatticeImmutContext<C, L, LP>>;
