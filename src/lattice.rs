@@ -66,6 +66,15 @@ pub trait ComputationLibrary<C: TaggedMapping + 'static> : Send + Sync {
     }
 }
 
+pub enum LowerBound<V> {
+    Geq(Option<V>),
+    Gt(Option<V>),
+}
+
+pub type LatMerkleRequirements<LK: Ord, LV> = BTreeMap<LK, LowerBound<LV>>;
+
+pub type LatMerkleRequirementsM<L: TaggedMapping> = LatMerkleRequirements<L::Key, L::Value>;
+
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct LatMerkleDeps<LK: Ord, LV, LCK: Ord, LCV> {
     pub lat_deps: BTreeMap<LK, Hash<LatMerkleNode<LK, LV, LCK, LCV, LV>>>,
@@ -121,9 +130,7 @@ type LatMerkleNodeM<L: TaggedMapping, LC: TaggedMapping, V> = LatMerkleNode<L::K
 #[async_trait]
 pub trait LatticeLibrary<C: TaggedMapping + 'static, L: TaggedMapping + 'static, LC: TaggedMapping + 'static> : Send + Sync {
 
-    // it's a valid element if check_elem returns a set and each the semilattice of each key in the
-    // set has a value
-    async fn check_elem(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _deps: LatMerkleDepsM<L, LC>, _ctx: Arc<dyn ComputationImmutContext<C>>) -> Res<BTreeSet<L::Key>> {
+    async fn check_elem(self: Arc<Self>, _key: &L::Key, _value: &L::Value, _deps: LatMerkleDepsM<L, LC>, _ctx: Arc<dyn ComputationImmutContext<C>>) -> Res<LatMerkleRequirementsM<L>> {
         bail!("check_elem not implemented")
     }
 
