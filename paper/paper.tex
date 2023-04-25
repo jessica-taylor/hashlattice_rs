@@ -85,6 +85,12 @@
 
       The total space $\mathrm{SemiLTot}(L, l, t)$ is then a semilattice whose elements are pairs $(x, x')$ where $x : L$ and $x' : l(x)$. The join is defined as $(x, x') \vee (y, y') := (x \vee y, t(x, x \vee y)(x') \vee t(y, x \vee y)(y'))$. This is equivalent to the above category-theoretic definition, proving it is a semilattice.
 
+    \section{Semilattice graphs}
+
+      Semilattice fibrations can be composed iteratively in a linear fashion. What is more general is to compose them in a directed acyclic graph structure.
+
+      Suppose we have a well-ordered, countable set $K$ of keys, and a set $V$ of values. For each key $k \in K$, 
+
     \section{Composing semilattice fibrations}
 
       Semilattice fibrations can be composed iteratively. Composing finitely is straightforward, while composing infinitely requires more work.
