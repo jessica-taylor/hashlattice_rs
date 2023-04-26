@@ -28,6 +28,9 @@ data UnitL ℓ : Set ℓ where
 
 data BotL ℓ : Set ℓ where
 
+botL-elim : {ℓ₁ ℓ₂ : Level} {A : Type ℓ₂} → BotL ℓ₁ → A
+botL-elim ()
+
 data Singleton {a} {A : Set a} (x : A) : Set a where
   _with≡_ : (y : A) → x ≡ y → Singleton x
 
@@ -88,8 +91,7 @@ record SemiGraph {ℓ₁ ℓ₂} {K : Type ℓ₁} (KT : TotalOrder ℓ₂ K) (V
   elemᵍ k ctx = Σ V (is-elemᵍ k ctx)
 
   maybe-leqᵍ : (k : K) → (ctx : K → Maybe V) → Maybe V → Maybe V → Type ℓ₂
-  maybe-leqᵍ _ _ nothing nothing = UnitL ℓ₂
-  maybe-leqᵍ _ _ nothing (just _) = UnitL ℓ₂
+  maybe-leqᵍ _ _ nothing _ = UnitL ℓ₂
   maybe-leqᵍ _ _ (just _) nothing = BotL ℓ₂
   maybe-leqᵍ k ctx (just x) (just y) = leqᵍ k ctx x y
 
@@ -128,6 +130,7 @@ record IsSemiGraph {ℓ₁ ℓ₂} {K : Type ℓ₁} {KT : TotalOrder ℓ₂ K} 
     join-lubⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y z : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst x) (fst z) → leqᵍ G k (fst ctx) (fst y) (fst z) → leqᵍ G k (fst ctx) (joinᵍ G k (fst ctx) (fst x) (fst y)) (fst z)
     bot≤ⁱ : (k : K) → (ctx : Ctxᵍ G) → (x : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (bottomᵍ G k (fst ctx)) (fst x)
     tr-is-elemⁱ : (k : K) → (ctx1 ctx2 : Ctxᵍ G) → ctx≤ᵍ G (fst ctx1) (fst ctx2) → (x : elemᵍ G k (fst ctx1)) → is-elemᵍ G k (fst ctx2) (trᵍ G k (fst ctx1) (fst ctx2) (fst x))
+    tr-joinⁱ : (k : K) → (ctx1 ctx2 : Ctxᵍ G) → ctx≤ᵍ G (fst ctx1) (fst ctx2) → (x y : elemᵍ G k (fst ctx1)) → trᵍ G k (fst ctx1) (fst ctx2) (joinᵍ G k (fst ctx1) (fst x) (fst y)) ≡ joinᵍ G k (fst ctx2) (trᵍ G k (fst ctx1) (fst ctx2) (fst x)) (trᵍ G k (fst ctx1) (fst ctx2) (fst y))
     tr-reflⁱ : (k : K) → (ctx : Ctxᵍ G) → (x : elemᵍ G k (fst ctx)) → trᵍ G k (fst ctx) (fst ctx) (fst x) ≡ fst x
     tr-transⁱ : (k : K) → (ctx1 ctx2 ctx3 : Ctxᵍ G) → ctx≤ᵍ G (fst ctx1) (fst ctx2) → ctx≤ᵍ G (fst ctx2) (fst ctx3) → (x : elemᵍ G k (fst ctx1)) → trᵍ G k (fst ctx2) (fst ctx3) (trᵍ G k (fst ctx1) (fst ctx2) (fst x)) ≡ trᵍ G k (fst ctx1) (fst ctx3) (fst x)
 
@@ -137,9 +140,20 @@ record IsSemiGraph {ℓ₁ ℓ₂} {K : Type ℓ₁} {KT : TotalOrder ℓ₂ K} 
   bottomⁱ : (k : K) → (ctx : Ctxᵍ G) → elemᵍ G k (fst ctx)
   bottomⁱ k ctx = (bottomᵍ G k (fst ctx) , bot-is-elemⁱ k ctx)
 
+  tr-monotoneⁱ : (k : K) → (ctx1 ctx2 : Ctxᵍ G) → ctx≤ᵍ G (fst ctx1) (fst ctx2) → (x y : elemᵍ G k (fst ctx1)) → leqᵍ G k (fst ctx1) (fst x) (fst y) → leqᵍ G k (fst ctx2) (trᵍ G k (fst ctx1) (fst ctx2) (fst x)) (trᵍ G k (fst ctx1) (fst ctx2) (fst y))
+  tr-monotoneⁱ k ctx1 ctx2 1≤2 x y x≤y = {!!}
+
   ctx≤-reflⁱ : (ctx : Ctxᵍ G) → ctx≤ᵍ G (fst ctx) (fst ctx)
   ctx≤-reflⁱ ctx k with fst ctx k | inspect (fst ctx) k | snd ctx k
   ... | nothing | [ _ ]ᵢ | _ = <>
   ... | just v | [ _ ]ᵢ | v-elem = transport (cong (λ v' → leqᵍ G k (fst ctx) v' v) (sym (tr-reflⁱ k ctx (v , v-elem)))) (leq-reflⁱ k ctx (v , v-elem))
+
+  ctx≤-transⁱ : (ctx1 ctx2 ctx3 : Ctxᵍ G) → ctx≤ᵍ G (fst ctx1) (fst ctx2) → ctx≤ᵍ G (fst ctx2) (fst ctx3) → ctx≤ᵍ G (fst ctx1) (fst ctx3)
+  ctx≤-transⁱ ctx1 ctx2 ctx3 1≤2 2≤3 k with fst ctx1 k | snd ctx1 k | fst ctx2 k | snd ctx2 k | fst ctx3 k | snd ctx3 k | 1≤2 k | 2≤3 k
+  ... | nothing | _ | _ | _ | _ | _ | _ | _ = <>
+  ... | just v1 | _ | nothing | _ | _ | _ | v1≤2 | _ = botL-elim v1≤2
+  ... | just v1 | _ | just v2 | _ | nothing | _ | _ | v2≤3 = v2≤3
+  ... | just v1 | v1-elem | just v2 | v2-elem | just v3 | v3-elem | v1≤2 | v2≤3 = {!!}
+
   
 
