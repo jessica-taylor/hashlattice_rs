@@ -71,6 +71,10 @@ is-or-nothing pred (just x) = pred x
 record SemiGraph {ℓ₁ ℓ₂} {K : Type ℓ₁} (KT : TotalOrder ℓ₂ K) (V : Type ℓ₁) : Type (ℓ₁ ⊔ (lsuc ℓ₂)) where
   field
     is-elemᵍ : K → (K → Maybe V) → V → Type ℓ₂
+    leqᵍ : K → (K → Maybe V) → V → V → Type ℓ₂
+    joinᵍ : K → (K → Maybe V) → V → V → V
+    bottomᵍ : K → (K → Maybe V) → V
+    trᵍ : (k : K) → (K → Maybe V) → (K → Maybe V) → V → V
 
   maybe-is-elemᵍ : K → (K → Maybe V) → Maybe V → Type ℓ₂
   maybe-is-elemᵍ k ctx = is-or-nothing (is-elemᵍ k ctx)
@@ -78,15 +82,15 @@ record SemiGraph {ℓ₁ ℓ₂} {K : Type ℓ₁} (KT : TotalOrder ℓ₂ K) (V
   elemᵍ : K → (K → Maybe V) → Type (ℓ₁ ⊔ ℓ₂)
   elemᵍ k ctx = Σ V (is-elemᵍ k ctx)
 
-  field
-    semilᵍ : (k : K) → (ctx : K → Maybe V) → SemiLat ℓ₂ (elemᵍ k ctx)
-    trᵍ : (k : K) → (ctx1 ctx2 : K → Maybe V) → V → V
-
-  maybe-leqᵍ : (k : K) → (ctx : K → Maybe V) → Maybe (elemᵍ k ctx) → Maybe (elemᵍ k ctx) → Type ℓ₂
+  maybe-leqᵍ : (k : K) → (ctx : K → Maybe V) → Maybe V → Maybe V → Type ℓ₂
   maybe-leqᵍ _ _ nothing nothing = UnitL ℓ₂
   maybe-leqᵍ _ _ nothing (just _) = UnitL ℓ₂
   maybe-leqᵍ _ _ (just _) nothing = BotL ℓ₂
-  maybe-leqᵍ k ctx (just x) (just y) = leqˢ (semilᵍ k ctx) x y
+  maybe-leqᵍ k ctx (just x) (just y) = leqᵍ k ctx x y
+
+  maybe-trᵍ : K → (K → Maybe V) → (K → Maybe V) → Maybe V → Maybe V
+  maybe-trᵍ _ _ _ nothing = nothing
+  maybe-trᵍ k ctx1 ctx2 (just v) = just (trᵍ k ctx1 ctx2 v)
 
   is-ctxᵍ : (K → Maybe V) → Type (ℓ₁ ⊔ ℓ₂)
   is-ctxᵍ ctx = (k : K) → maybe-is-elemᵍ k ctx (ctx k)
@@ -99,10 +103,24 @@ record SemiGraph {ℓ₁ ℓ₂} {K : Type ℓ₁} (KT : TotalOrder ℓ₂ K) (V
   ... | nothing | _ = nothing
   ... | just v | v-is = just (v , v-is)
 
-  ctx-leqᵍ : Ctxᵍ → Ctxᵍ → Type (ℓ₁ ⊔ ℓ₂)
-  ctx-leqᵍ ctx1 ctx2 = (k : K) → maybe-leqᵍ k (fst ctx2) {!!} (ctx-lookup k ctx2)
+  ctx-leqᵍ : (K → Maybe V) → (K → Maybe V) → Type (ℓ₁ ⊔ ℓ₂)
+  ctx-leqᵍ ctx1 ctx2 = (k : K) → maybe-leqᵍ k ctx2 (maybe-trᵍ k ctx1 ctx2 (ctx1 k)) (ctx2 k)
 
-  -- problem: ctx-leqᵍ depends on trᵍ, however the type of trᵍ depends on ctx-leqᵍ
+open SemiGraph
 
-  -- ctx-leqᵍ : (K → Maybe V) → (K → Maybe V) → Type ℓ
-  -- ctx-leqᵍ ctx1 ctx2 = (k : K) → {!leqˢ (semilᵍ k ctx2) ? (!}
+record IsSemiGraph {ℓ₁ ℓ₂} {K : Type ℓ₁} {KT : TotalOrder ℓ₂ K} {V : Type ℓ₁} (G : SemiGraph KT V) : Type (ℓ₁ ⊔ (lsuc ℓ₂)) where
+
+  field
+    leq-propⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y : elemᵍ G k (fst ctx)) → isProp (leqᵍ G k (fst ctx) (fst x) (fst y))
+    leq-reflⁱ : (k : K) → (ctx : Ctxᵍ G) → (x : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst x) (fst x)
+    leq-transⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y z : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst x) (fst y) → leqᵍ G k (fst ctx) (fst y) (fst z) → leqᵍ G k (fst ctx) (fst x) (fst z)
+    leq-antisymmⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst x) (fst y) → leqᵍ G k (fst ctx) (fst y) (fst x) → x ≡ y
+    join-is-elemⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y : elemᵍ G k (fst ctx)) → is-elemᵍ G k (fst ctx) (joinᵍ G k (fst ctx) (fst x) (fst y))
+
+  joinⁱ : (k : K) → (ctx : Ctxᵍ G) → elemᵍ G k (fst ctx) → elemᵍ G k (fst ctx) → elemᵍ G k (fst ctx)
+  joinⁱ k ctx x y = (joinᵍ G k (fst ctx) (fst x) (fst y) , join-is-elemⁱ k ctx x y)
+
+  field
+    left≤joinⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst x) (joinᵍ G k (fst ctx) (fst x) (fst y))
+    right≤joinⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst y) (joinᵍ G k (fst ctx) (fst x) (fst y))
+    join-lubⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y z : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst x) (fst z) → leqᵍ G k (fst ctx) (fst y) (fst z) → leqᵍ G k (fst ctx) (joinᵍ G k (fst ctx) (fst x) (fst y)) (fst z)
