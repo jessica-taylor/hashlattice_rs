@@ -93,11 +93,24 @@ record SemiLat {ℓ₁ ℓ₂} {S : Type ℓ₁} (PS : PreSemiLat ℓ₂ S) : Ty
     right≤joinˢ : (x y : S) → is-elemˢ PS x → is-elemˢ PS y → leqˢ PS y (joinˢ PS x y)
     join-lubˢ : (x y z : S) → is-elemˢ PS x → is-elemˢ PS y → is-elemˢ PS z → leqˢ PS x z → leqˢ PS y z → leqˢ PS (joinˢ PS x y) z
     bottom-minˢ : (x : S) → is-elemˢ PS x → leqˢ PS (bottomˢ PS) x
+
+  join-≤-is-maxˢ : (x y : S) → is-elemˢ PS x → is-elemˢ PS y → leqˢ PS x y → joinˢ PS x y ≡ y
+  join-≤-is-maxˢ x y x-elem y-elem x≤y = antisymmˢ (joinˢ PS x y) y (join-elemˢ x y x-elem y-elem) y-elem (join-lubˢ x y y x-elem y-elem y-elem x≤y (reflˢ y y-elem)) (right≤joinˢ x y x-elem y-elem)
+
+  join-max-is-≤ˢ : (x y : S) → is-elemˢ PS x → is-elemˢ PS y → joinˢ PS x y ≡ y → leqˢ PS x y
+  join-max-is-≤ˢ x y x-elem y-elem x∨y=y = transport (cong (leqˢ PS x) x∨y=y) (left≤joinˢ x y x-elem y-elem)
+
+open SemiLat
     
-record SemiMor {ℓ₁ ℓ₂} {S1 S2 : Type ℓ₁} (PS1 : PreSemiLat ℓ₂ S1) (PS2 : PreSemiLat ℓ₂ S2) (f : S1 → S2) : Type (ℓ₁ ⊔ ℓ₂) where
+record SemiMor {ℓ₁ ℓ₂} {S1 S2 : Type ℓ₁} {PS1 : PreSemiLat ℓ₂ S1} {PS2 : PreSemiLat ℓ₂ S2} (L1 : SemiLat PS1) (L2 : SemiLat PS2) (f : S1 → S2) : Type (ℓ₁ ⊔ ℓ₂) where
   field
-    ap-elemᵐ : (x : S1) → is-elemˢ PS2 (f x)
+    ap-elemᵐ : (x : S1) → is-elemˢ PS1 x → is-elemˢ PS2 (f x)
     join-distrᵐ : (x y : S1) → is-elemˢ PS1 x → is-elemˢ PS1 y → f (joinˢ PS1 x y) ≡ joinˢ PS2 (f x) (f y)
+
+  monotoneᵐ : (x y : S1) → is-elemˢ PS1 x → is-elemˢ PS1 y → leqˢ PS1 x y → leqˢ PS2 (f x) (f y)
+  monotoneᵐ x y x-elem y-elem x≤y = let foo = join-distrᵐ x y x-elem y-elem in let foo' = transport (cong (λ z → f z ≡ joinˢ PS2 (f x) (f y)) (join-≤-is-maxˢ L1 x y x-elem y-elem x≤y)) foo in join-max-is-≤ˢ L2 (f x) (f y) (ap-elemᵐ x x-elem) (ap-elemᵐ y y-elem) (sym foo')
+
+open SemiMor
     
 
 is-or-nothing : {ℓ₁ ℓ₂ : Level} {S : Type ℓ₁} → (S → Type ℓ₂) → Maybe S → Type ℓ₂
@@ -144,9 +157,26 @@ open PreSemiGraph
 record SemiGraph {ℓ₁ ℓ₂} {K : Type ℓ₁} {KT : TotalOrder ℓ₂ K} {V : Type ℓ₁} (PG : PreSemiGraph KT V) : Type (ℓ₁ ⊔ ℓ₂) where
   field
     semiᵍ : (k : K) → (ctx : K → Maybe V) → is-ctxᵍ PG ctx → SemiLat (pre-semiᵍ PG k ctx)
-    tr-morᵍ : (k : K) → (ctx1 ctx2 : K → Maybe V) → is-ctxᵍ PG ctx1 → is-ctxᵍ PG ctx2 → ctx≤ᵍ PG ctx1 ctx2 → SemiMor (pre-semiᵍ PG k ctx1) (pre-semiᵍ PG k ctx2) (trᵍ PG k ctx1 ctx2)
+    tr-morᵍ : (k : K) → (ctx1 ctx2 : K → Maybe V) → (ctx1-is : is-ctxᵍ PG ctx1) → (ctx2-is : is-ctxᵍ PG ctx2) → ctx≤ᵍ PG ctx1 ctx2 → SemiMor (semiᵍ k ctx1 ctx1-is) (semiᵍ k ctx2 ctx2-is) (trᵍ PG k ctx1 ctx2)
     tr-reflᵍ : (k : K) → (ctx : K → Maybe V) → is-ctxᵍ PG ctx → (v : V) → is-elemᵍ PG k ctx v → trᵍ PG k ctx ctx v ≡ v
+    tr-transᵍ : (k : K) → (ctx1 ctx2 ctx3 : K → Maybe V) → is-ctxᵍ PG ctx1 → is-ctxᵍ PG ctx2 → is-ctxᵍ PG ctx3 → ctx≤ᵍ PG ctx1 ctx2 → ctx≤ᵍ PG ctx2 ctx3 → (v : V) → is-elemᵍ PG k ctx1 v → trᵍ PG k ctx2 ctx3 (trᵍ PG k ctx1 ctx2 v) ≡ trᵍ PG k ctx1 ctx3 v
 
+  ctx≤-reflᵍ : (ctx : K → Maybe V) → is-ctxᵍ PG ctx → ctx≤ᵍ PG ctx ctx
+  ctx≤-reflᵍ ctx ctx-is k with ctx k | ctx-is k
+  ... | nothing | _ = <>
+  ... | just v | v-elem = transport (cong (λ v' → leqᵍ PG k ctx v' v) (sym (tr-reflᵍ k ctx ctx-is v v-elem))) (reflˢ (semiᵍ k ctx ctx-is) v v-elem)
+
+  ctx≤-transⁱ : (ctx1 ctx2 ctx3 : K → Maybe V) → is-ctxᵍ PG ctx1 → is-ctxᵍ PG ctx2 → is-ctxᵍ PG ctx3 → ctx≤ᵍ PG ctx1 ctx2 → ctx≤ᵍ PG ctx2 ctx3 → ctx≤ᵍ PG ctx1 ctx3
+  ctx≤-transⁱ ctx1 ctx2 ctx3 ctx1-is ctx2-is ctx3-is 1≤2 2≤3 k with ctx1 k | ctx1-is k | ctx2 k | ctx2-is k | ctx3 k | ctx3-is k | 1≤2 k | 2≤3 k
+  ... | nothing | _ | _ | _ | _ | _ | _ | _ = <>
+  ... | just v1 | _ | nothing | _ | _ | _ | v1≤2 | _ = botL-elim v1≤2
+  ... | just v1 | _ | just v2 | _ | nothing | _ | _ | v2≤3 = v2≤3
+  ... | just v1 | v1-elem | just v2 | v2-elem | just v3 | v3-elem | v1≤2 | v2≤3 =
+       let tr1→2 = tr-morᵍ k ctx1 ctx2 ctx1-is ctx2-is 1≤2 in
+       let tr2→3 = tr-morᵍ k ctx2 ctx3 ctx2-is ctx3-is 2≤3 in
+       let foo = monotoneᵐ tr2→3 (trᵍ PG k ctx1 ctx2 v1) v2 (ap-elemᵐ tr1→2 v1 v1-elem) v2-elem v1≤2 in
+       transport (cong (λ vv → leqᵍ PG k ctx3 vv v3) (tr-transᵍ k ctx1 ctx2 ctx3 ctx1-is ctx2-is ctx3-is 1≤2 2≤3 v1 v1-elem))
+         (transˢ (semiᵍ k ctx3 ctx3-is) (trᵍ PG k ctx2 ctx3 (trᵍ PG k ctx1 ctx2 v1)) (trᵍ PG k ctx2 ctx3 v2) v3 (ap-elemᵐ tr2→3 (trᵍ PG k ctx1 ctx2 v1) (ap-elemᵐ tr1→2 v1 v1-elem)) (ap-elemᵐ tr2→3 v2 v2-elem) v3-elem foo v2≤3)
 
 -- record SemiGraph {ℓ₁ ℓ₂} {K : Type ℓ₁} (KT : TotalOrder ℓ₂ K) (V : Type ℓ₁) : Type (ℓ₁ ⊔ (lsuc ℓ₂)) where
 --   field
