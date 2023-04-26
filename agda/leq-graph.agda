@@ -28,6 +28,11 @@ data UnitL ℓ : Set ℓ where
 
 data BotL ℓ : Set ℓ where
 
+data Singleton {a} {A : Set a} (x : A) : Set a where
+  _with≡_ : (y : A) → x ≡ y → Singleton x
+
+inspec : ∀ {a} {A : Set a} (x : A) → Singleton x
+inspec x = x with≡ refl
 
 record PartialOrder {ℓ₁} ℓ₂ (S : Type ℓ₁) : Type (ℓ₁ ⊔ (lsuc ℓ₂)) where
   field
@@ -98,13 +103,14 @@ record SemiGraph {ℓ₁ ℓ₂} {K : Type ℓ₁} (KT : TotalOrder ℓ₂ K) (V
   Ctxᵍ : Type (ℓ₁ ⊔ ℓ₂)
   Ctxᵍ = Σ (K → Maybe V) is-ctxᵍ
 
-  ctx-lookup : (k : K) → (ctx : Ctxᵍ) → Maybe (elemᵍ k (fst ctx))
-  ctx-lookup k (ctx , is-ctx) with ctx k | is-ctx k
+  ctx-lookupᵍ : (k : K) → (ctx : Ctxᵍ) → Maybe (elemᵍ k (fst ctx))
+  ctx-lookupᵍ k (ctx , is-ctx) with ctx k | is-ctx k
   ... | nothing | _ = nothing
   ... | just v | v-is = just (v , v-is)
 
-  ctx-leqᵍ : (K → Maybe V) → (K → Maybe V) → Type (ℓ₁ ⊔ ℓ₂)
-  ctx-leqᵍ ctx1 ctx2 = (k : K) → maybe-leqᵍ k ctx2 (maybe-trᵍ k ctx1 ctx2 (ctx1 k)) (ctx2 k)
+  ctx≤ᵍ : (K → Maybe V) → (K → Maybe V) → Type (ℓ₁ ⊔ ℓ₂)
+  ctx≤ᵍ ctx1 ctx2 = (k : K) → maybe-leqᵍ k ctx2 (maybe-trᵍ k ctx1 ctx2 (ctx1 k)) (ctx2 k)
+
 
 open SemiGraph
 
@@ -116,11 +122,24 @@ record IsSemiGraph {ℓ₁ ℓ₂} {K : Type ℓ₁} {KT : TotalOrder ℓ₂ K} 
     leq-transⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y z : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst x) (fst y) → leqᵍ G k (fst ctx) (fst y) (fst z) → leqᵍ G k (fst ctx) (fst x) (fst z)
     leq-antisymmⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst x) (fst y) → leqᵍ G k (fst ctx) (fst y) (fst x) → x ≡ y
     join-is-elemⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y : elemᵍ G k (fst ctx)) → is-elemᵍ G k (fst ctx) (joinᵍ G k (fst ctx) (fst x) (fst y))
+    bot-is-elemⁱ : (k : K) → (ctx : Ctxᵍ G) → is-elemᵍ G k (fst ctx) (bottomᵍ G k (fst ctx))
+    left≤joinⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst x) (joinᵍ G k (fst ctx) (fst x) (fst y))
+    right≤joinⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst y) (joinᵍ G k (fst ctx) (fst x) (fst y))
+    join-lubⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y z : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst x) (fst z) → leqᵍ G k (fst ctx) (fst y) (fst z) → leqᵍ G k (fst ctx) (joinᵍ G k (fst ctx) (fst x) (fst y)) (fst z)
+    bot≤ⁱ : (k : K) → (ctx : Ctxᵍ G) → (x : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (bottomᵍ G k (fst ctx)) (fst x)
+    tr-is-elemⁱ : (k : K) → (ctx1 ctx2 : Ctxᵍ G) → ctx≤ᵍ G (fst ctx1) (fst ctx2) → (x : elemᵍ G k (fst ctx1)) → is-elemᵍ G k (fst ctx2) (trᵍ G k (fst ctx1) (fst ctx2) (fst x))
+    tr-reflⁱ : (k : K) → (ctx : Ctxᵍ G) → (x : elemᵍ G k (fst ctx)) → trᵍ G k (fst ctx) (fst ctx) (fst x) ≡ fst x
+    tr-transⁱ : (k : K) → (ctx1 ctx2 ctx3 : Ctxᵍ G) → ctx≤ᵍ G (fst ctx1) (fst ctx2) → ctx≤ᵍ G (fst ctx2) (fst ctx3) → (x : elemᵍ G k (fst ctx1)) → trᵍ G k (fst ctx2) (fst ctx3) (trᵍ G k (fst ctx1) (fst ctx2) (fst x)) ≡ trᵍ G k (fst ctx1) (fst ctx3) (fst x)
 
   joinⁱ : (k : K) → (ctx : Ctxᵍ G) → elemᵍ G k (fst ctx) → elemᵍ G k (fst ctx) → elemᵍ G k (fst ctx)
   joinⁱ k ctx x y = (joinᵍ G k (fst ctx) (fst x) (fst y) , join-is-elemⁱ k ctx x y)
 
-  field
-    left≤joinⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst x) (joinᵍ G k (fst ctx) (fst x) (fst y))
-    right≤joinⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst y) (joinᵍ G k (fst ctx) (fst x) (fst y))
-    join-lubⁱ : (k : K) → (ctx : Ctxᵍ G) → (x y z : elemᵍ G k (fst ctx)) → leqᵍ G k (fst ctx) (fst x) (fst z) → leqᵍ G k (fst ctx) (fst y) (fst z) → leqᵍ G k (fst ctx) (joinᵍ G k (fst ctx) (fst x) (fst y)) (fst z)
+  bottomⁱ : (k : K) → (ctx : Ctxᵍ G) → elemᵍ G k (fst ctx)
+  bottomⁱ k ctx = (bottomᵍ G k (fst ctx) , bot-is-elemⁱ k ctx)
+
+  ctx≤-reflⁱ : (ctx : Ctxᵍ G) → ctx≤ᵍ G (fst ctx) (fst ctx)
+  ctx≤-reflⁱ ctx k with fst ctx k | inspect (fst ctx) k | snd ctx k
+  ... | nothing | [ _ ]ᵢ | _ = <>
+  ... | just v | [ _ ]ᵢ | v-elem = transport (cong (λ v' → leqᵍ G k (fst ctx) v' v) (sym (tr-reflⁱ k ctx (v , v-elem)))) (leq-reflⁱ k ctx (v , v-elem))
+  
+
