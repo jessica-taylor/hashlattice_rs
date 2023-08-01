@@ -20,45 +20,76 @@ open import Cubical.Data.Nat
 open import Cubical.Data.Sigma
 open import Cubical.Data.Sigma.Base using (_×_) public
 
--- case_of_ : ∀ {a b} {A : Set a} {B : Set b} → A → (A → B) → B
--- case x of f = f x
+data Ord : Set where
+  zeroOrd : Ord
+  sucOrd  : Ord → Ord
+  limOrd  : (ℕ → Ord) → Ord
 
-data Comparison : Type where
-  LT : Comparison
-  EQ : Comparison
-  GT : Comparison
+data predᵒ : Ord → Ord → Type where
+  pred-suc : (x : Ord) → predᵒ x (sucOrd x)
+  pred-lim : (f : ℕ → Ord) → (n : ℕ) → predᵒ (f n) (limOrd f)
 
-negate-cmp : Comparison → Comparison
-negate-cmp LT = GT
-negate-cmp EQ = EQ
-negate-cmp GT = LT
+data _≤ᵒ_ : Ord → Ord → Type
+data _<ᵒ_ : Ord → Ord → Type
 
+data _≤ᵒ_ where
+  self-≤ : (x : Ord) → x ≤ᵒ x
+  pred-≤ : {x y : Ord} → x <ᵒ y → x ≤ᵒ y
 
-record Ordinal ℓ : Type (lsuc ℓ) where
-  field
-    elᵒ : Type ℓ
-    compareᵒ : elᵒ → elᵒ → Comparison
-    reflᵒ : {x : elᵒ} → compareᵒ x x ≡ EQ
-    anticommᵒ : {x y : elᵒ} → compareᵒ x y ≡ negate-cmp (compareᵒ y x)
-    is-eqᵒ : {x y : elᵒ} → compareᵒ x y ≡ EQ → x ≡ y
-    transᵒ : {x y z : elᵒ} → compareᵒ x y ≡ LT → compareᵒ y z ≡ LT → compareᵒ x z ≡ LT
+data _<ᵒ_ where
+  pred-< : {x y z : Ord} → x ≤ᵒ y → predᵒ y z → x <ᵒ z
 
-  type<ᵒ : elᵒ → Type ℓ
-  type<ᵒ k = Σ elᵒ (λ k' → compareᵒ k' k ≡ LT)
+Ord≤ : Ord → Type
+Ord≤ ub = Σ Ord (λ o → o ≤ᵒ ub)
 
+Ord< : Ord → Type
+Ord< ub = Σ Ord (λ o → o <ᵒ ub)
 
+ord-is-<maybe : Maybe Ord → Ord → Type
+ord-is-<maybe nothing _ = Unit
+ord-is-<maybe (just ub) o = o <ᵒ ub
 
-  field
-    inductionᵒ : (P : elᵒ → Type) → ((k : elᵒ) → ((k' : type<ᵒ k) → P (fst k')) → P k) → (k : elᵒ) → P k
+Ord<Maybe : Maybe Ord → Type
+Ord<Maybe m = Σ Ord (ord-is-<maybe m)
 
-  to-type<ᵒ : (k : elᵒ) → elᵒ → Maybe (type<ᵒ k)
-  to-type<ᵒ k k' with compareᵒ k' k | inspect (compareᵒ k') k
-  ... | LT | [ lt ]ᵢ = just ((k' , lt))
-  ... | _ | _ = nothing
+Ord<-to-≤ : {k : Ord} → Ord< k → Ord≤ k
+Ord<-to-≤ (k' , k'<k) = (k' , pred-≤ k'<k)
 
+≤-transᵒ : {x y z : Ord} → x ≤ᵒ y → y ≤ᵒ z → x ≤ᵒ z
+<-trans-rᵒ : {x y z : Ord} → x ≤ᵒ y → y <ᵒ z → x <ᵒ z
 
+≤-transᵒ x≤y (self-≤ _) = x≤y
+≤-transᵒ x≤y (pred-≤ y<z) = pred-≤ (<-trans-rᵒ x≤y y<z)
 
-open Ordinal
+<-trans-rᵒ x≤y (pred-< y≤z' zpred) = pred-< (≤-transᵒ x≤y y≤z') zpred
+
+<-trans-lᵒ : {x y z : Ord} → x <ᵒ y → y ≤ᵒ z → x <ᵒ z
+<-trans-lᵒ x<y (self-≤ _) = x<y
+<-trans-lᵒ x<y (pred-≤ y<z) = <-trans-rᵒ (pred-≤ x<y) y<z
+
+<-suc-to-≤ᵒ : {x y : Ord} → x <ᵒ sucOrd y → x ≤ᵒ y
+<-suc-to-≤ᵒ (pred-< x≤sy' predy) with predy
+... | (pred-suc _) = x≤sy'
+
+not-<0ᵒ : {x : Ord} → x <ᵒ zeroOrd → ⊥
+not-<0ᵒ (pred-< _ pred) with pred
+... | ()
+
+induction1ᵒ : (P : Ord → Type) → P zeroOrd →
+                                 ((k : Ord) → P k → P (sucOrd k)) →
+                                 ((f : ℕ → Ord) → ((n : ℕ) → P (f n)) → P (limOrd f)) →
+                                 (k : Ord) → P k
+induction1ᵒ _ pz _ _ zeroOrd = pz
+induction1ᵒ P pz ps pl (sucOrd k) = ps k (induction1ᵒ P pz ps pl k)
+induction1ᵒ P pz ps pl (limOrd f) = pl f (λ n → induction1ᵒ P pz ps pl (f n))
+
+induction2ᵒ : (P : Ord → Type) → ((k : Ord) → ((k' : Ord< k) → P (fst k')) → P k) → (k : Ord) → P k
+induction2ᵒ P ind k = induction1ᵒ (λ k → (k' : Ord) → k' ≤ᵒ k → P k')
+  (λ k' k'≤0 → ind k' (λ (k'' , k''<k') → ⊥-elim (not-<0ᵒ (<-trans-lᵒ k''<k' k'≤0))))
+  (λ k ind-assm k' k'≤sk → ind k' (λ (k'' , k''<k') → ind-assm k'' (<-suc-to-≤ᵒ (<-trans-lᵒ k''<k' k'≤sk)))  )
+  (λ f ind-assm k' k'≤lf → ind k' (λ (k'' , k''<k') → case <-trans-lᵒ k''<k' k'≤lf of
+    λ {(pred-< k''≤fn (pred-lim _ n)) → ind-assm n k'' k''≤fn}))
+  k k (self-≤ k)
 
 record SemiLat : Type₁ where
   field
@@ -85,133 +116,119 @@ maybe->>= (just x) f = f x
 
 record SemiLatGraph : Type₁ where
   field
-
-    keyᵍ : Ordinal lzero
     valueᵍ : Type
+    max-ordᵍ : Ord
+
+
+  Ctx<ᵍ : Ord → Type
+  Ctx<ᵍ k = Ord< k → Maybe valueᵍ
 
   Ctxᵍ : Type
-  Ctxᵍ = (elᵒ keyᵍ → Maybe valueᵍ)
+  Ctxᵍ = Ctx<ᵍ max-ordᵍ
 
-  Key<ᵍ : elᵒ keyᵍ → Type
-  Key<ᵍ k = Σ (elᵒ keyᵍ) (λ k' → compareᵒ keyᵍ k' k ≡ LT)
 
-  Key≤ᵍ : elᵒ keyᵍ → Type
-  Key≤ᵍ k = Σ (elᵒ keyᵍ) (λ k' → ¬ (compareᵒ keyᵍ k' k ≡ GT))
-
-  Ctx<ᵍ : elᵒ keyᵍ → Type
-  Ctx<ᵍ k = Key<ᵍ k → Maybe valueᵍ
-
-  Ctx≤ᵍ : elᵒ keyᵍ → Type
-  Ctx≤ᵍ k = Key≤ᵍ k → Maybe valueᵍ
+  Ctx≤ᵍ : Ord → Type
+  Ctx≤ᵍ k = Ord≤ k → Maybe valueᵍ
 
   field
-    is-elemᵍ : (k : elᵒ keyᵍ) → Ctx<ᵍ k → valueᵍ → Type
-    joinᵍ : (k : elᵒ keyᵍ) → Ctx<ᵍ k → valueᵍ → valueᵍ → valueᵍ
-    transportᵍ : (k : elᵒ keyᵍ) → Ctx<ᵍ k → Ctx<ᵍ k → valueᵍ → Maybe valueᵍ
+    is-elemᵍ : (k : Ord) → Ctx<ᵍ k → valueᵍ → Type
+    joinᵍ : (k : Ord) → Ctx<ᵍ k → valueᵍ → valueᵍ → valueᵍ
+    transportᵍ : (k : Ord) → Ctx<ᵍ k → Ctx<ᵍ k → valueᵍ → Maybe valueᵍ
 
-  ctx<-to-ctxᵍ : {k : elᵒ keyᵍ} → Ctx<ᵍ k → Ctxᵍ
-  ctx<-to-ctxᵍ {k} ctx k' = maybe->>= (to-type<ᵒ keyᵍ k k') ctx
+  ctx-filter-<ᵍ : {k : Ord} → (k' : Ord< k) → Ctx<ᵍ k → Ctx<ᵍ (fst k')
+  ctx-filter-<ᵍ k' ctx k'' = ctx ((fst k'' , <-trans-lᵒ (snd k'') (pred-≤ (snd k'))))
 
-  ctx-filter-<ᵍ : (k : elᵒ keyᵍ) → Ctxᵍ → Ctx<ᵍ k
-  ctx-filter-<ᵍ k ctx k' = ctx (fst k')
+  maybe-is-elemᵍ : (k : Ord) → Ctx<ᵍ k → Maybe valueᵍ → Type
+  maybe-is-elemᵍ k ctx v = case v of
+    λ {nothing → Unit;
+       (just v) → is-elemᵍ k ctx v}
+  
 
-  ctx<-filter-<ᵍ : {k : elᵒ keyᵍ} → (k' : elᵒ keyᵍ) → Ctx<ᵍ k → Ctx<ᵍ k'
-  ctx<-filter-<ᵍ k' ctx = ctx-filter-<ᵍ k' (ctx<-to-ctxᵍ ctx)
+  ctx-are-elemsᵍ : {ub : Ord} → Ctx<ᵍ ub → Type
+  ctx-are-elemsᵍ {ub} ctx = (k : Ord< ub) → maybe-is-elemᵍ (fst k) (ctx-filter-<ᵍ k ctx) (ctx k)
 
-  ctx-are-elemsᵍ : Ctxᵍ → Type
-  ctx-are-elemsᵍ ctx =
-    (k : elᵒ keyᵍ) → case ctx k of
-      λ { nothing → Unit;
-          (just v) → is-elemᵍ k (ctx-filter-<ᵍ k ctx) v }
-
-    
-
-  ctx<-are-elemsᵍ : {k : elᵒ keyᵍ} → Ctx<ᵍ k → Type
-  ctx<-are-elemsᵍ ctx = ctx-are-elemsᵍ (ctx<-to-ctxᵍ ctx)
-
-  ctx-≤ᵍ : Ctxᵍ → Ctxᵍ → Type
-  ctx-≤ᵍ ctx1 ctx2 = (k : elᵒ keyᵍ) →
-    let v1' = maybe->>= (ctx1 k) (transportᵍ k (ctx-filter-<ᵍ k ctx1) (ctx-filter-<ᵍ k ctx2))
-    in maybe-≤ (λ v1 v2 → joinᵍ k (ctx-filter-<ᵍ k ctx2) v1 v2 ≡ v2) v1' (ctx2 k)
-
-  ctx<-≤ᵍ : {k : elᵒ keyᵍ} → Ctx<ᵍ k → Ctx<ᵍ k → Type
-  ctx<-≤ᵍ ctx1 ctx2 = ctx-≤ᵍ (ctx<-to-ctxᵍ ctx1) (ctx<-to-ctxᵍ ctx2)
--- case tran
---     case ctx1 k of
---     λ {nothing → Unit;
---        (just v1) → case ctx2 k of
---          λ {nothing → ⊥;
---             (just v2) → case transportᵍ k (ctx-filter-<ᵍ k ctx1) (ctx-filter-<ᵍ k ctx2) v1 of
---               λ {nothing → Unit;
---                  (just v1') → joinᵍ k (ctx-filter-<ᵍ k ctx2) v1' v2 ≡ v2 } } }
-
-  -- ctx-set-to-joinᵍ : elᵒ keyᵍ → Ctxᵍ → Ctxᵍ → Ctxᵍ → Ctxᵍ
-  -- ctx-set-to-joinᵍ k ctx1 ctx2 ctx k' = case compareᵒ keyᵍ k' k return (λ _ → Maybe valueᵍ) of
-  --   λ { LT → ctx k';
-  --       EQ → maybe-join (joinᵍ k ctx) (ctx1 k) (ctx2 k);
-  --       GT → nothing }
-  -- ctx-include-last : Ctxᵍ → (k : elᵒ keyᵍ) → (type-<ᵒ keyᵍ → Ctxᵍ) → Ctxᵍ
-  -- ctx-
-
-  join-in-ctx<ᵍ : (k : elᵒ keyᵍ) → Ctx<ᵍ k → Ctx<ᵍ k → Ctx<ᵍ k → Maybe valueᵍ → Maybe valueᵍ → Maybe valueᵍ
-  join-in-ctx<ᵍ k ctx1 ctx2 ctx-j v1 v2 =
-    maybe-join (joinᵍ k ctx-j)
-      (maybe->>= v1 (transportᵍ k ctx1 ctx-j))
-      (maybe->>= v2 (transportᵍ k ctx2 ctx-j))
-
-  ctx<-joinᵍ : (k : elᵒ keyᵍ) → Ctx<ᵍ k → Ctx<ᵍ k → Ctx<ᵍ k
-  ctx<-joinᵍ = inductionᵒ keyᵍ (λ k → Ctx<ᵍ k → Ctx<ᵍ k → Ctx<ᵍ k)
-    (λ k ind ctx1 ctx2 k' →
-      let ctx1' = ctx<-filter-<ᵍ (fst k') ctx1
-          ctx2' = ctx<-filter-<ᵍ (fst k') ctx2
-          ctx-j = ind k' ctx1' ctx2'
-      in join-in-ctx<ᵍ (fst k') ctx1' ctx2' ctx-j (ctx1 k') (ctx2 k'))
-
-  ctx-joinᵍ : Ctxᵍ → Ctxᵍ → Ctxᵍ
-  ctx-joinᵍ ctx1 ctx2 k =
-    let ctx1' = ctx-filter-<ᵍ (fst k) ctx1
-        ctx2' = ctx-filter-<ᵍ (fst k) ctx2
-        ctx-j = ctx<-joinᵍ k ctx1' ctx2'
-    in join-in-ctx<ᵍ (fst k) ctx1' ctx2' ctx-j (ctx1 k) (ctx2 k)
-
+  ctx-≤ᵍ : {ub : Ord} → Ctx<ᵍ ub → Ctx<ᵍ ub → Type
+  ctx-≤ᵍ {ub} ctx1 ctx2 = (k : Ord< ub) →
+    let v1' = maybe->>= (ctx1 k) (transportᵍ (fst k) (ctx-filter-<ᵍ k ctx1) (ctx-filter-<ᵍ k ctx2))
+    in maybe-≤ (λ v1 v2 → joinᵍ (fst k) (ctx-filter-<ᵍ k ctx2) v1 v2 ≡ v2) v1' (ctx2 k)
 
   field
-    join-is-elemᵍ : (k : elᵒ keyᵍ) → (ctx : Ctx<ᵍ k) → ctx<-are-elemsᵍ ctx →
+    join-is-elemᵍ : (k : Ord) → (ctx : Ctx<ᵍ k) → ctx-are-elemsᵍ ctx →
       (v1 v2 : valueᵍ) → is-elemᵍ k ctx v1 → is-elemᵍ k ctx v2 →
       is-elemᵍ k ctx (joinᵍ k ctx v1 v2)
 
-    join-commutᵍ : (k : elᵒ keyᵍ) → (ctx : Ctx<ᵍ k) → ctx<-are-elemsᵍ ctx →
+    join-commutᵍ : (k : Ord) → (ctx : Ctx<ᵍ k) → ctx-are-elemsᵍ ctx →
       (v1 v2 : valueᵍ) → is-elemᵍ k ctx v1 → is-elemᵍ k ctx v2 →
       joinᵍ k ctx v1 v2 ≡ joinᵍ k ctx v2 v1
 
-    join-assocᵍ : (k : elᵒ keyᵍ) → (ctx : Ctx<ᵍ k) → ctx<-are-elemsᵍ ctx →
+    join-assocᵍ : (k : Ord) → (ctx : Ctx<ᵍ k) → ctx-are-elemsᵍ ctx →
       (v1 v2 v3 : valueᵍ) → is-elemᵍ k ctx v1 → is-elemᵍ k ctx v2 → is-elemᵍ k ctx v3 →
       joinᵍ k ctx (joinᵍ k ctx v1 v2) v3 ≡ joinᵍ k ctx v1 (joinᵍ k ctx v2 v3)
 
-    join-idemᵍ : (k : elᵒ keyᵍ) → (ctx : Ctx<ᵍ k) → ctx<-are-elemsᵍ ctx →
+    join-idemᵍ : (k : Ord) → (ctx : Ctx<ᵍ k) → ctx-are-elemsᵍ ctx →
       (v : valueᵍ) → is-elemᵍ k ctx v →
       joinᵍ k ctx v v ≡ v
 
-    tr-is-elemᵍ : (k : elᵒ keyᵍ) → (ctx1 ctx2 : Ctx<ᵍ k) →
-      ctx<-are-elemsᵍ ctx1 → ctx<-are-elemsᵍ ctx2 → ctx<-≤ᵍ ctx1 ctx2 →
+    tr-is-elemᵍ : (k : Ord) → (ctx1 ctx2 : Ctx<ᵍ k) →
+      ctx-are-elemsᵍ ctx1 → ctx-are-elemsᵍ ctx2 → ctx-≤ᵍ ctx1 ctx2 →
       (v : valueᵍ) → is-elemᵍ k ctx1 v →
       case transportᵍ k ctx1 ctx2 v of
         λ { nothing → Unit;
             (just v') → is-elemᵍ k ctx2 v' }
 
-    tr-idᵍ : (k : elᵒ keyᵍ) → (ctx : Ctx<ᵍ k) →
-      ctx<-are-elemsᵍ ctx →
+    tr-idᵍ : (k : Ord) → (ctx : Ctx<ᵍ k) →
+      ctx-are-elemsᵍ ctx →
       (v : valueᵍ) → is-elemᵍ k ctx v →
       transportᵍ k ctx ctx v ≡ just v
 
-    tr-transᵍ : (k : elᵒ keyᵍ) → (ctx1 ctx2 ctx3 : Ctx<ᵍ k) →
-      ctx<-are-elemsᵍ ctx1 → ctx<-are-elemsᵍ ctx2 → ctx<-are-elemsᵍ ctx3 →
-      ctx<-≤ᵍ ctx1 ctx2 → ctx<-≤ᵍ ctx2 ctx3 →
+    tr-transᵍ : (k : Ord) → (ctx1 ctx2 ctx3 : Ctx<ᵍ k) →
+      ctx-are-elemsᵍ ctx1 → ctx-are-elemsᵍ ctx2 → ctx-are-elemsᵍ ctx3 →
+      ctx-≤ᵍ ctx1 ctx2 → ctx-≤ᵍ ctx2 ctx3 →
       (v : valueᵍ) → is-elemᵍ k ctx1 v →
       case transportᵍ k ctx1 ctx2 v of
         λ { nothing → nothing ≡ transportᵍ k ctx1 ctx3 v;
             (just v') → transportᵍ k ctx2 ctx3 v' ≡ transportᵍ k ctx1 ctx3 v }
 
+  ctx-join-indstepᵍ : {ub : Ord} → (k : Ord< ub) → Ctx<ᵍ ub → Ctx<ᵍ ub → (Ctx<ᵍ (fst k) → Ctx<ᵍ (fst k) → Ctx<ᵍ (fst k)) → Maybe valueᵍ
+  ctx-join-indstepᵍ k ctx1 ctx2 join-ind =
+    let ctx1' = ctx-filter-<ᵍ k ctx1
+        ctx2' = ctx-filter-<ᵍ k ctx2
+        ctx-j = join-ind ctx1' ctx2'
+    in maybe-join (joinᵍ (fst k) ctx-j)
+         (maybe->>= (ctx1 k) (transportᵍ (fst k) ctx1' ctx-j))
+         (maybe->>= (ctx2 k) (transportᵍ (fst k) ctx2' ctx-j))
+    
+
+  ctx-joinᵍ : (k : Ord) → Ctx<ᵍ k → Ctx<ᵍ k → Ctx<ᵍ k
+  ctx-joinᵍ = induction2ᵒ (λ k → Ctx<ᵍ k → Ctx<ᵍ k → Ctx<ᵍ k)
+    (λ k ind ctx1 ctx2 k' → ctx-join-indstepᵍ k' ctx1 ctx2 (ind k'))
+
+  ctx-join-are-elemsᵍ : (k : Ord) → (ctx1 ctx2 : Ctx<ᵍ k) →
+    ctx-are-elemsᵍ ctx1 → ctx-are-elemsᵍ ctx2 → ctx-are-elemsᵍ (ctx-joinᵍ k ctx1 ctx2)
+  ctx-join-are-elemsᵍ = induction2ᵒ (λ k → (ctx1 ctx2 : Ctx<ᵍ k) → ctx-are-elemsᵍ ctx1 → ctx-are-elemsᵍ ctx2 → ctx-are-elemsᵍ (ctx-joinᵍ k ctx1 ctx2))
+    (λ k ind ctx1 ctx2 ctx1-elems ctx2-elems k' →
+      let ctx1' = ctx-filter-<ᵍ k' ctx1
+          ctx2' = ctx-filter-<ᵍ k' ctx2
+          ctx-j = ctx-joinᵍ (fst k') ctx1' ctx2'
+      in {!!})
+
+  -- ctx-join-are-elems : (k : Ord) → (ctx1 ctx2 : Ctx<ᵍ k) → ctx<-are-elemsᵍ (ctx<-joinᵍ k ctx1 ctx2)
+  -- ctx-join-are-elems =
+  --   let P : Ord → Type
+  --       P = (λ k → (ctx1 ctx2 : Ctx<ᵍ k) → ctx<-are-elemsᵍ (ctx<-joinᵍ k ctx1 ctx2))
+  --       P' : Ord → Type
+  --       P' k = Ctx<ᵍ k → Ctx<ᵍ k → Ctx<ᵍ k
+  --       step : (k : Ord) → ((k' : type<ᵒ keyᵍ k) → P' (fst k')) → P' k
+  --       step = (λ k ind ctx1 ctx2 k' → ctx-join-indstepᵍ (fst k') (ctx<-to-ctxᵍ ctx1) (ctx<-to-ctxᵍ ctx2) (ind k'))
+  --   in inductionᵒ keyᵍ (λ k → (ctx1 ctx2 : Ctx<ᵍ k) → ctx<-are-elemsᵍ (ctx<-joinᵍ k ctx1 ctx2))
+  --     (λ k ind ctx1 ctx2 k' →
+  --       case ctx<-to-ctxᵍ (ctx<-joinᵍ k ctx1 ctx2) k' return maybe-is-elemᵍ k' {!!} of
+  --       λ { nothing → tt;
+  --           (just v) → {!!} })
+  --       -- let foofoo = induction-eqᵒ keyᵍ P' step k in
+
+  -- ctx-join-are-elems : (ctx1 ctx2 : Ctxᵍ) → ctx-are-elemsᵍ (ctx-joinᵍ ctx1 ctx2)
+  -- ctx-join-are-elems ctx1 ctx2 k = {!!}
   
       
 

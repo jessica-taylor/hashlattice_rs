@@ -39,48 +39,47 @@ impl SignalClient {
     }
 
     pub async fn handle_messages(self: &Arc<Self>) -> Res<()> {
-        loop {
-            if let Some(msg) = {
+        while let Some(msg) = {
                 let mut ws_stream = self.ws_stream.lock().await;
                 ws_stream.next().await
-            } {
-                match msg? {
-                    Message::Binary(bs) => {
-                        let msg: SignalMessageToClient = rmp_serde::from_slice(&bs)?;
-                        match msg {
-                            SignalMessageToClient::SessionDescription(peer, desc) => {
-                                if let Some(handler) = self.remote_session_description_handlers.lock().unwrap().get(&peer) {
-                                    let fut = handler(desc);
-                                    drop(handler);
-                                    tokio::spawn(async move {
-                                        if let Err(e) = fut.await {
-                                            println!("Error handling remote session description: {}", e);
-                                        }
-                                    });
-                                }
-                            },
-                            SignalMessageToClient::IceCandidate(peer, candidate) => {
-                                if let Some(handler) = self.remote_ice_candidate_handlers.lock().unwrap().get(&peer) {
-                                    let fut = handler(candidate);
-                                    drop(handler);
-                                    tokio::spawn(async move {
-                                        if let Err(e) = fut.await {
-                                            println!("Error handling remote ice candidate: {}", e);
-                                        }
-                                    });
-                                }
-                            },
-                            _ => {
-                                println!("Received unexpected message: {:?}", msg);
+        } {
+            match msg? {
+                Message::Binary(bs) => {
+                    let msg: SignalMessageToClient = rmp_serde::from_slice(&bs)?;
+                    match msg {
+                        SignalMessageToClient::SessionDescription(peer, desc) => {
+                            if let Some(handler) = self.remote_session_description_handlers.lock().unwrap().get(&peer) {
+                                let fut = handler(desc);
+                                drop(handler);
+                                tokio::spawn(async move {
+                                    if let Err(e) = fut.await {
+                                        println!("Error handling remote session description: {}", e);
+                                    }
+                                });
                             }
+                        },
+                        SignalMessageToClient::IceCandidate(peer, candidate) => {
+                            if let Some(handler) = self.remote_ice_candidate_handlers.lock().unwrap().get(&peer) {
+                                let fut = handler(candidate);
+                                drop(handler);
+                                tokio::spawn(async move {
+                                    if let Err(e) = fut.await {
+                                        println!("Error handling remote ice candidate: {}", e);
+                                    }
+                                });
+                            }
+                        },
+                        _ => {
+                            println!("Received unexpected message: {:?}", msg);
                         }
                     }
-                    other => {
-                        println!("Received a message which is not binary: {:?}", other);
-                    }
+                }
+                other => {
+                    println!("Received a message which is not binary: {:?}", other);
                 }
             }
         }
+        Ok(())
     }
 }
 
