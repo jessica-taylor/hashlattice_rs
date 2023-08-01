@@ -73,10 +73,49 @@ open TotalOrder
 record SemiLat {ℓ} (S : Type ℓ) : Type ℓ where
   field
     joinˢ : S → S → S
-    bottomˢ : S → S → S
+    bottomˢ : S
+    idemˢ : (x : S) → joinˢ x x ≡ x
+    commˢ : (x y : S) → joinˢ x y ≡ joinˢ y x
+    assocˢ : (x y z : S) → joinˢ (joinˢ x y) z ≡ joinˢ x (joinˢ y z)
 
   leqˢ : S → S → Type ℓ
   leqˢ x y = joinˢ x y ≡ y
+
+  leq-reflˢ : (x : S) → leqˢ x x
+  leq-reflˢ x = idemˢ x
+
+  leq-transˢ : {x y z : S} → leqˢ x y → leqˢ y z → leqˢ x z
+  leq-transˢ {x} {y} {z} x≤y y≤z =
+    joinˢ x z
+    ≡⟨ cong (joinˢ x) (sym y≤z) ⟩
+    joinˢ x (joinˢ y z)
+    ≡⟨ sym (assocˢ x y z) ⟩
+    joinˢ (joinˢ x y) z
+    ≡⟨ cong (λ a → joinˢ a z) x≤y ⟩
+    joinˢ y z
+    ≡⟨ y≤z ⟩
+    z
+    ∎
+
+  left≤joinˢ : (x y : S) → leqˢ x (joinˢ x y)
+  left≤joinˢ x y =
+    joinˢ x (joinˢ x y)
+    ≡⟨ sym (assocˢ x x y) ⟩
+    joinˢ (joinˢ x x) y
+    ≡⟨ cong (λ a → joinˢ a y) (idemˢ x) ⟩
+    joinˢ x y
+    ∎
+
+  right≤joinˢ : (x y : S) → leqˢ y (joinˢ x y)
+  right≤joinˢ x y =
+    joinˢ y (joinˢ x y)
+    ≡⟨ cong (joinˢ y) (commˢ x y) ⟩
+    joinˢ y (joinˢ y x)
+    ≡⟨ left≤joinˢ y x ⟩
+    joinˢ y x
+    ≡⟨ commˢ y x ⟩
+    joinˢ x y
+    ∎
 
 open SemiLat
 
@@ -84,8 +123,19 @@ record DepSemiLat {ℓ₁ ℓ₂} {S : Type ℓ₁} (L : SemiLat S) (D : S → T
   field
     semiᵈ : (x : S) → SemiLat (D x)
     trᵈ : {x y : S} → leqˢ L x y → D x → D y
+    tr-morphᵈ : {x y : S} → (x≤y : leqˢ L x y) → (a b : D x) → trᵈ x≤y (joinˢ (semiᵈ x) a b) ≡ joinˢ (semiᵈ y) (trᵈ x≤y a) (trᵈ x≤y b)
+    tr-reflᵈ : (x : S) → (x' : D x) → trᵈ (leq-reflˢ L x) x' ≡ x'
+    tr-transᵈ : {x y z : S} → (x≤y : leqˢ L x y) → (y≤z : leqˢ L y z) → (x' : D x) → trᵈ y≤z (trᵈ x≤y x') ≡ trᵈ (leq-transˢ L x≤y y≤z) x'
 
 open DepSemiLat
+
+Σˢ : {ℓ₁ ℓ₂ : Level} {S : Type ℓ₁} {L : SemiLat S} {D : S → Type ℓ₂} → (DS : DepSemiLat L D) → SemiLat (Σ S D)
+joinˢ (Σˢ {L = L} DS) (x , x') (y , y') = (joinˢ L x y , joinˢ (semiᵈ DS (joinˢ L x y)) (trᵈ DS (left≤joinˢ L x y) x') (trᵈ DS (right≤joinˢ L x y) y'))
+bottomˢ (Σˢ {L = L} DS) = (bottomˢ L , bottomˢ (semiᵈ DS (bottomˢ L)))
+idemˢ (Σˢ _) = {!!}
+commˢ (Σˢ _) = {!!}
+assocˢ (Σˢ _) = {!!}
+
 
 list-member : {K : Type} → K → List K → Type
 list-member _ [] = ⊥
@@ -112,6 +162,29 @@ pset-union : {K : Type} → (K → Maybe Unit) → (K → Maybe Unit) → (K →
 pset-union f g k with f k | g k
 ... | nothing | nothing = nothing
 ... | _ | _ = just tt
+
+pset-union-idem : {K : Type} → (x : K → Maybe Unit) → pset-union x x ≡ x
+pset-union-idem {K} x = funExt elem-idem
+  where elem-idem : (k : K) → pset-union x x k ≡ x k
+        elem-idem k with x k
+        ... | nothing = refl
+        ... | just tt = refl
+
+pset-union-comm : {K : Type} → (x y : K → Maybe Unit) → pset-union x y ≡ pset-union y x
+pset-union-comm {K} x y = funExt elem-comm
+  where elem-comm : (k : K) → pset-union x y k ≡ pset-union y x k
+        elem-comm k with x k | y k
+        ... | nothing | nothing = refl
+        ... | nothing | just tt = refl
+        ... | just tt | nothing = refl
+        ... | just tt | just tt = refl
+
+psetˢ : (K : Type) → SemiLat (K → Maybe Unit)
+joinˢ (psetˢ _) = pset-union
+bottomˢ (psetˢ _) _ = nothing
+idemˢ (psetˢ _) = pset-union-idem
+commˢ (psetˢ _) = pset-union-comm
+assocˢ (psetˢ _) = {!!}
 
 pfun-union : {K V : Type} → (V → V → V) → (K → Maybe V) → (K → Maybe V) → (K → Maybe V)
 pfun-union inner f g k with f k | g k
