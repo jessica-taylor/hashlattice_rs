@@ -10,7 +10,7 @@ struct CellUpdater {
 impl CellUpdater {
     fn new<F : FnMut() -> Result<(), String> + 'static>(f: F) -> CellUpdater {
         Self {
-            dirty: true,
+            dirty: false,
             refresh_fn: Box::new(f),
             dependents: Vec::new()
         }
