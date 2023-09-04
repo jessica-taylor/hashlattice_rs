@@ -28,12 +28,21 @@ impl<L : Semilattice> LatCell<L> {
         let value = self.get_value();
         Self { value: Arc::new(Mutex::new(value)), parent: Some(Box::new(self.clone())) }
     }
-    fn join_to_parent(&mut self) -> Result<(), String> {
+    fn join_to_parent(&self) -> Result<(), String> {
         match &self.parent {
             None => Ok(()),
             Some(parent) => {
                 let value = self.value.lock().unwrap();
                 parent.join_value(value.deref())
+            }
+        }
+    }
+    fn join_from_parent(&self) -> Result<(), String> {
+        match &self.parent {
+            None => Ok(()),
+            Some(parent) => {
+                let value = parent.value.lock().unwrap();
+                self.join_value(value.deref())
             }
         }
     }
