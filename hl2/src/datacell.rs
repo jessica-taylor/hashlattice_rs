@@ -69,4 +69,7 @@ impl<T : Clone + 'static> DataCell<T> {
         self.updater.lock().unwrap().refresh()?;
         Ok(self.value.clone())
     }
+    fn get_updater(&self) -> &Arc<Mutex<CellUpdater>> {
+        &self.updater
+    }
 }
