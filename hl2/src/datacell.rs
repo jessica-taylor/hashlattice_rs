@@ -42,33 +42,30 @@ impl CellUpdater {
 }
 
 struct DataCell<T> {
-    updater: Mutex<CellUpdater>,
+    updater: Arc<Mutex<CellUpdater>>,
     value: Mutex<T>,
-    update_fn: Box<dyn FnMut() -> Result<T, String>>,
+    update_fn: Mutex<Box<dyn FnMut() -> Result<T, String>>>,
 }
 
-impl<T : Clone> DataCell<T> {
+impl<T : Clone + 'static> DataCell<T> {
     fn new<F : FnMut() -> Result<T, String> + 'static>(value: T, update_fn: F) -> Arc<Mutex<Self>> {
         let this = Arc::new(Mutex::new(Self {
-            updater: Mutex::new(CellUpdater::new(|| Ok(()))),
+            updater: Arc::new(Mutex::new(CellUpdater::new(|| Ok(())))),
             value: Mutex::new(value),
-            update_fn: Box::new(update_fn)
+            update_fn: Mutex::new(Box::new(update_fn))
         }));
         let this2 = this.clone();
-        let updater = CellUpdater::new(|| {
-            Ok(()) // TODO
+        let updater = CellUpdater::new(move || {
+            let this_lock = this2.lock().unwrap();
+            let new_val = (this_lock.update_fn.lock().unwrap())()?;
+            *this_lock.value.lock().unwrap() = new_val;
+            Ok(())
         });
-        this.lock().unwrap().updater = Mutex::new(updater);
+        this.lock().unwrap().updater = Arc::new(Mutex::new(updater));
         this
     }
+    fn get_value(&self) -> Result<T, String> {
+        self.updater.lock().unwrap().refresh()?;
+        Ok(self.value.lock().unwrap().clone())
+    }
 }
-
-// struct DataCellContents<T> {
-//     value: T,
-//     dirty: bool,
-//     dependents: Vec<Weak<Mutex<DataCellContents<T>>>>,
-//     dependencies: Vec<Arc<Mutex<DataCellContents<T>>>>,
-// }
-// pub struct DataCell<T> {
-//     contents: Arc<Mutex<DataCellContents<T>>>
-// }
