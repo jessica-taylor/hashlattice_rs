@@ -48,10 +48,11 @@ struct DataCell<T> {
 }
 
 impl<T : Clone + 'static> DataCell<T> {
-    fn new<F : FnMut() -> Result<T, String> + 'static>(value: T, update_fn: F) -> Arc<Mutex<Self>> {
+    fn new<F : FnMut() -> Result<T, String> + 'static>(mut update_fn: F) -> Result<Arc<Mutex<Self>>, String> {
+        let initial_value = update_fn()?;
         let this = Arc::new(Mutex::new(Self {
             updater: Arc::new(Mutex::new(CellUpdater::new(|| Ok(())))),
-            value: value,
+            value: initial_value,
             update_fn: Box::new(update_fn)
         }));
         let this2 = this.clone();
@@ -62,7 +63,7 @@ impl<T : Clone + 'static> DataCell<T> {
             Ok(())
         });
         this.lock().unwrap().updater = Arc::new(Mutex::new(updater));
-        this
+        Ok(this)
     }
     fn get_value(&self) -> Result<T, String> {
         self.updater.lock().unwrap().refresh()?;
